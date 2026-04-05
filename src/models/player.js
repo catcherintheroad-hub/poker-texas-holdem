@@ -13,6 +13,7 @@ function createPlayer({ id, name, seatIndex }) {
     connectionState: 'connected',
     holeCards: [],
     committedChips: 0,
+    totalCommittedChips: 0,
     hasFolded: false,
     isAllIn: false,
     lastAction: null,

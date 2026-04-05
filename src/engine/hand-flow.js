@@ -1,6 +1,7 @@
 'use strict';
 
 const { createDeck, drawCards, shuffleDeck } = require('./cards');
+const { compareEvaluations, evaluateBestHand } = require('./hand-evaluator');
 const { createHandState } = require('../models/hand');
 const {
   findPlayerBySeat,
@@ -248,13 +249,7 @@ function advancePhase(room) {
   }
 
   if (nextPhase === 'showdown') {
-    room.phase = 'showdown';
-    room.hand.phase = 'showdown';
-    room.hand.actingSeatIndex = -1;
-    room.hand.pendingSeatIndexes = [];
-    room.hand.showdownSeatIndexes = getRemainingPlayers(room).map((player) => player.seatIndex);
-    room.updatedAt = Date.now();
-    return { type: 'showdown_pending' };
+    return resolveShowdown(room);
   }
 
   const drawCount = BOARD_CARD_COUNT[nextPhase];
@@ -278,6 +273,8 @@ function resolveUncontestedWin(room, winner) {
     id: winner.id,
     name: winner.name,
     hand: [...winner.holeCards],
+    handType: 'Uncontested',
+    prize,
   };
   awardChips(room, [winner], prize);
 
@@ -295,16 +292,7 @@ function resolveUncontestedWin(room, winner) {
 }
 
 function resolveShowdownPlaceholder(room) {
-  room.phase = 'waiting';
-  room.hand = createHandState({
-    handNumber: room.hand.handNumber,
-    phase: 'waiting',
-  });
-  room.updatedAt = Date.now();
-
-  return {
-    type: 'showdown_pending',
-  };
+  return resolveShowdown(room);
 }
 
 function prepareNextHandOrWaiting(room) {
@@ -317,6 +305,7 @@ function prepareNextHandOrWaiting(room) {
 
   for (const player of room.players) {
     player.committedChips = 0;
+    player.totalCommittedChips = 0;
     player.holeCards = [];
     player.lastAction = null;
     player.hasFolded = false;
@@ -326,10 +315,11 @@ function prepareNextHandOrWaiting(room) {
 }
 
 function awardChips(room, winners, totalPot) {
-  const evenShare = Math.floor(totalPot / winners.length);
-  let remainder = totalPot - evenShare * winners.length;
+  const orderedWinners = orderSeatsForPayout(room, winners);
+  const evenShare = Math.floor(totalPot / orderedWinners.length);
+  let remainder = totalPot - evenShare * orderedWinners.length;
 
-  winners.forEach((winner) => {
+  orderedWinners.forEach((winner) => {
     const payout = evenShare + (remainder > 0 ? 1 : 0);
     winner.chips += payout;
     winner.totalScore += payout;
@@ -422,6 +412,7 @@ function resetPlayersForNewHand(players) {
     player.status = player.chips > 0 ? 'active' : 'sitting_out';
     player.connectionState = 'connected';
     player.committedChips = 0;
+    player.totalCommittedChips = 0;
     player.hasFolded = false;
     player.isAllIn = false;
     player.lastAction = null;
@@ -436,6 +427,7 @@ function postBlind(player, amount) {
   const blindAmount = Math.min(amount, player.chips);
   player.chips -= blindAmount;
   player.committedChips = blindAmount;
+  player.totalCommittedChips += blindAmount;
   player.isAllIn = player.chips === 0;
   player.lastAction = blindAmount === amount ? `blind ${blindAmount}` : `all-in blind ${blindAmount}`;
   return blindAmount;
@@ -445,6 +437,7 @@ function commitChips(room, player, amount) {
   const commitAmount = Math.min(amount, player.chips);
   player.chips -= commitAmount;
   player.committedChips += commitAmount;
+  player.totalCommittedChips += commitAmount;
   player.isAllIn = player.chips === 0;
   room.hand.pot += commitAmount;
 }
@@ -471,6 +464,128 @@ function removePendingSeat(pendingSeatIndexes, seatIndex) {
   if (index >= 0) {
     pendingSeatIndexes.splice(index, 1);
   }
+}
+
+function resolveShowdown(room) {
+  const contenders = getRemainingPlayers(room);
+  const evaluations = new Map();
+
+  for (const contender of contenders) {
+    evaluations.set(contender.id, evaluateBestHand([...contender.holeCards, ...room.hand.board]));
+  }
+
+  const sidePots = buildSidePots(room.players);
+  const payoutByPlayerId = new Map();
+
+  for (const sidePot of sidePots) {
+    const eligibleContenders = sidePot.eligiblePlayers.filter((player) => !player.hasFolded);
+    if (!eligibleContenders.length) {
+      continue;
+    }
+
+    const winners = selectPotWinners(eligibleContenders, evaluations);
+    distributePot(room, winners, sidePot.amount, payoutByPlayerId);
+  }
+
+  const payoutWinners = contenders
+    .filter((player) => (payoutByPlayerId.get(player.id) || 0) > 0)
+    .map((player) => ({
+      id: player.id,
+      name: player.name,
+      hand: [...player.holeCards],
+      handType: evaluations.get(player.id).name,
+      prize: payoutByPlayerId.get(player.id),
+    }));
+
+  const outcome = {
+    type: 'hand_result',
+    winners: payoutWinners,
+    prize: room.hand.pot,
+    pot: room.hand.pot,
+    handType: payoutWinners[0] ? payoutWinners[0].handType : 'Showdown',
+    communityCards: [...room.hand.board],
+    sidePots: sidePots.map((sidePot) => ({
+      amount: sidePot.amount,
+      eligiblePlayerIds: sidePot.eligiblePlayers.map((player) => player.id),
+    })),
+  };
+
+  prepareNextHandOrWaiting(room);
+  return outcome;
+}
+
+function buildSidePots(players) {
+  const contributors = players
+    .filter((player) => player.totalCommittedChips > 0)
+    .sort((left, right) => left.totalCommittedChips - right.totalCommittedChips || left.seatIndex - right.seatIndex);
+
+  const contributionLevels = [...new Set(contributors.map((player) => player.totalCommittedChips))];
+  const pots = [];
+  let previousLevel = 0;
+
+  for (const level of contributionLevels) {
+    const eligiblePlayers = contributors.filter((player) => player.totalCommittedChips >= level);
+    const amount = (level - previousLevel) * eligiblePlayers.length;
+
+    if (amount > 0) {
+      pots.push({ amount, eligiblePlayers });
+    }
+
+    previousLevel = level;
+  }
+
+  return pots;
+}
+
+function selectPotWinners(players, evaluations) {
+  let bestEvaluation = null;
+  let winners = [];
+
+  for (const player of players) {
+    const evaluation = evaluations.get(player.id);
+    if (!bestEvaluation) {
+      bestEvaluation = evaluation;
+      winners = [player];
+      continue;
+    }
+
+    const comparison = compareEvaluations(evaluation, bestEvaluation);
+    if (comparison > 0) {
+      bestEvaluation = evaluation;
+      winners = [player];
+    } else if (comparison === 0) {
+      winners.push(player);
+    }
+  }
+
+  return winners;
+}
+
+function distributePot(room, winners, amount, payoutByPlayerId) {
+  const orderedWinners = orderSeatsForPayout(room, winners);
+  const evenShare = Math.floor(amount / orderedWinners.length);
+  let remainder = amount - evenShare * orderedWinners.length;
+
+  for (const winner of orderedWinners) {
+    const payout = evenShare + (remainder > 0 ? 1 : 0);
+    winner.chips += payout;
+    winner.totalScore += payout;
+    room.scores[winner.id] = (room.scores[winner.id] || 0) + payout;
+    payoutByPlayerId.set(winner.id, (payoutByPlayerId.get(winner.id) || 0) + payout);
+    remainder = Math.max(0, remainder - 1);
+  }
+}
+
+function orderSeatsForPayout(room, players) {
+  return [...players].sort((left, right) => {
+    const leftDistance = normalizeSeatDistance(room, left.seatIndex);
+    const rightDistance = normalizeSeatDistance(room, right.seatIndex);
+    return leftDistance - rightDistance;
+  });
+}
+
+function normalizeSeatDistance(room, seatIndex) {
+  return (seatIndex - room.buttonSeatIndex + room.maxPlayers) % room.maxPlayers;
 }
 
 module.exports = {

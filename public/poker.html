@@ -624,7 +624,7 @@ function showResultFlash(msg) {
   const winners = msg.winners || [];
   document.getElementById('result-title').textContent = winners.length > 1 ? '平局！' : '赢家！';
   document.getElementById('result-hand').textContent = winners[0]?.handType || '';
-  document.getElementById('result-winners').textContent = winners.map(w => `${w.name} +${msg.prize}`).join(', ');
+  document.getElementById('result-winners').textContent = winners.map(w => `${w.name} +${w.prize ?? msg.prize}`).join(', ');
   el.classList.add('active');
 }
 

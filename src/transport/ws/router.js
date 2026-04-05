@@ -346,12 +346,14 @@ function publishOutcome(room, store, outcome) {
           id: winner.id,
           name: winner.name,
           hand: winner.hand.map(cardToString),
-          handType: outcome.handType,
+          handType: winner.handType || outcome.handType,
+          prize: winner.prize,
         })),
         prize: outcome.prize,
         pot: outcome.pot,
         communityCards: outcome.communityCards.map(cardToString),
         scores: serializeRoomLobby(room).scores,
+        sidePots: outcome.sidePots || [],
       });
       broadcastGameState(room, store);
       return;
