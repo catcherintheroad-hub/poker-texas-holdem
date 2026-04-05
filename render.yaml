@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: poker-texas-holdem
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/rooms
+    envVars:
+      - key: NODE_ENV
+        value: production
