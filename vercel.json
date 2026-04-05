@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm install",
+  "outputDirectory": "public",
+  "framework": null,
+  "regions": ["iad1"],
+  "routes": [
+    { "src": "/(.*)", "dest": "/$1" }
+  ]
+}
