@@ -1,9 +1,23 @@
 {
-  "buildCommand": "npm install",
-  "outputDirectory": "public",
-  "framework": null,
-  "regions": ["iad1"],
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
   "routes": [
-    { "src": "/(.*)", "dest": "/$1" }
+    { "src": "/poker.html", "dest": "/public/poker.html" },
+    { "src": "/poker.css", "dest": "/public/poker.css" },
+    { "src": "/api/poll", "dest": "/server.js" },
+    { "src": "/api/rooms", "dest": "/server.js" },
+    { "src": "/api/action", "dest": "/server.js" },
+    { "src": "/api/create", "dest": "/server.js" },
+    { "src": "/api/join", "dest": "/server.js" },
+    { "src": "/(.*)", "dest": "/server.js" }
   ]
 }
