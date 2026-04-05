@@ -191,7 +191,10 @@ function handleResumeSession({ context, message, socket, store }) {
   store.sockets.set(playerId, socket);
 
   player.connectionState = 'connected';
+  player.disconnectedAt = null;
+  player.disconnectDeadlineAt = null;
   room.updatedAt = Date.now();
+  clearDisconnectGraceTimer(room, playerId);
 
   sendJson(socket, {
     type: 'session_resumed',
@@ -203,6 +206,7 @@ function handleResumeSession({ context, message, socket, store }) {
 
   if (room.phase !== 'waiting') {
     broadcastGameState(room, store);
+    syncActionTimer(room, store);
   }
 }
 
@@ -233,6 +237,7 @@ function handleStartGame({ context, socket, store }) {
   room.gameSession.active = true;
   initializeHand(room);
   broadcastGameState(room, store);
+  syncActionTimer(room, store);
 }
 
 function handleAction({ context, message, socket, store }) {
@@ -318,6 +323,7 @@ function handleDisconnect({ context, store }) {
 }
 
 function removePlayerFromRoom(room, playerId, store) {
+  clearDisconnectGraceTimer(room, playerId);
   const outcome = handlePlayerExit(room, playerId);
   const playerIndex = room.players.findIndex((player) => player.id === playerId);
   if (playerIndex < 0) {
@@ -328,7 +334,7 @@ function removePlayerFromRoom(room, playerId, store) {
   room.updatedAt = Date.now();
 
   if (room.players.length === 0) {
-    clearNextHandTimer(room);
+    clearRoomTimers(room);
     store.rooms.delete(room.code);
     return;
   }
@@ -356,6 +362,7 @@ function removePlayerFromRoom(room, playerId, store) {
 
   if (room.phase !== 'waiting') {
     broadcastGameState(room, store);
+    syncActionTimer(room, store);
   }
 }
 
@@ -366,7 +373,10 @@ function markPlayerDisconnected(room, playerId, store) {
   }
 
   player.connectionState = 'disconnected';
+  player.disconnectedAt = Date.now();
+  player.disconnectDeadlineAt = player.disconnectedAt + room.gameSession.disconnectGraceMs;
   room.updatedAt = Date.now();
+  setDisconnectGraceTimer(room, playerId, store);
 
   let outcome = null;
   if (room.phase !== 'waiting') {
@@ -380,6 +390,7 @@ function markPlayerDisconnected(room, playerId, store) {
 
   if (room.phase !== 'waiting') {
     broadcastGameState(room, store);
+    syncActionTimer(room, store);
   }
 }
 
@@ -407,6 +418,7 @@ function clampNumber(value, min, max, fallback) {
 function publishOutcome(room, store, outcome) {
   if (!outcome) {
     broadcastGameState(room, store);
+    syncActionTimer(room, store);
     return;
   }
 
@@ -429,6 +441,7 @@ function publishOutcome(room, store, outcome) {
       });
       broadcastGameState(room, store);
       scheduleNextHand(room, store);
+      syncActionTimer(room, store);
       return;
     case 'showdown_pending':
       broadcastGameState(room, store);
@@ -436,11 +449,13 @@ function publishOutcome(room, store, outcome) {
         type: 'error',
         message: '已进入 showdown，牌型比较与分池将在下一分支完成',
       });
+      syncActionTimer(room, store);
       return;
     case 'phase_advanced':
     case 'state_only':
     default:
       broadcastGameState(room, store);
+      syncActionTimer(room, store);
   }
 }
 
@@ -492,6 +507,133 @@ function clearNextHandTimer(room) {
 
   clearTimeout(room.gameSession.nextHandTimer);
   room.gameSession.nextHandTimer = null;
+}
+
+function syncActionTimer(room, store) {
+  if (!room.gameSession) {
+    return;
+  }
+
+  const actingPlayer = room.players.find((player) => player.seatIndex === room.hand.actingSeatIndex) || null;
+  if (!actingPlayer || room.phase === 'waiting' || room.phase === 'showdown' || room.phase === 'scoring') {
+    clearActionTimer(room);
+    return;
+  }
+
+  if (
+    room.gameSession.actionTimeoutTimer &&
+    room.gameSession.actionPlayerId === actingPlayer.id &&
+    room.gameSession.actionSeatIndex === actingPlayer.seatIndex &&
+    room.gameSession.actionHandId === room.hand.id
+  ) {
+    return;
+  }
+
+  clearActionTimer(room);
+  const scheduledPlayerId = actingPlayer.id;
+  const scheduledSeatIndex = actingPlayer.seatIndex;
+  const scheduledHandId = room.hand.id;
+  room.gameSession.actionPlayerId = actingPlayer.id;
+  room.gameSession.actionSeatIndex = actingPlayer.seatIndex;
+  room.gameSession.actionHandId = room.hand.id;
+  room.gameSession.actionDeadlineAt = Date.now() + room.gameSession.actionTimeoutMs;
+  room.gameSession.actionTimeoutTimer = setTimeout(() => {
+    room.gameSession.actionTimeoutTimer = null;
+    room.gameSession.actionPlayerId = null;
+    room.gameSession.actionSeatIndex = null;
+    room.gameSession.actionHandId = null;
+    room.gameSession.actionDeadlineAt = null;
+
+    if (
+      !store.rooms.has(room.code) ||
+      room.hand.id !== scheduledHandId ||
+      room.hand.actingSeatIndex !== scheduledSeatIndex
+    ) {
+      return;
+    }
+
+    const currentPlayer = room.players.find((player) => player.id === scheduledPlayerId);
+    if (!currentPlayer) {
+      return;
+    }
+
+    const result = applyAction(room, currentPlayer, 'fold', 0);
+    if (!result.ok) {
+      return;
+    }
+
+    broadcastRoom(room, store, {
+      type: 'error',
+      message: `${currentPlayer.name} 超时未操作，系统已自动弃牌`,
+    });
+    publishOutcome(room, store, result.outcome);
+  }, room.gameSession.actionTimeoutMs);
+}
+
+function clearActionTimer(room) {
+  if (!room.gameSession || !room.gameSession.actionTimeoutTimer) {
+    room.gameSession.actionPlayerId = null;
+    room.gameSession.actionSeatIndex = null;
+    room.gameSession.actionHandId = null;
+    room.gameSession.actionDeadlineAt = null;
+    return;
+  }
+
+  clearTimeout(room.gameSession.actionTimeoutTimer);
+  room.gameSession.actionTimeoutTimer = null;
+  room.gameSession.actionPlayerId = null;
+  room.gameSession.actionSeatIndex = null;
+  room.gameSession.actionHandId = null;
+  room.gameSession.actionDeadlineAt = null;
+}
+
+function setDisconnectGraceTimer(room, playerId, store) {
+  clearDisconnectGraceTimer(room, playerId);
+
+  const timer = setTimeout(() => {
+    room.gameSession.disconnectTimers.delete(playerId);
+    if (!store.rooms.has(room.code)) {
+      return;
+    }
+
+    const player = room.players.find((entry) => entry.id === playerId);
+    if (!player || player.connectionState === 'connected') {
+      return;
+    }
+
+    removePlayerFromRoom(room, playerId, store);
+  }, room.gameSession.disconnectGraceMs);
+
+  room.gameSession.disconnectTimers.set(playerId, timer);
+}
+
+function clearDisconnectGraceTimer(room, playerId) {
+  if (!room.gameSession || !room.gameSession.disconnectTimers.has(playerId)) {
+    return;
+  }
+
+  clearTimeout(room.gameSession.disconnectTimers.get(playerId));
+  room.gameSession.disconnectTimers.delete(playerId);
+
+  const player = room.players.find((entry) => entry.id === playerId);
+  if (player) {
+    player.disconnectedAt = null;
+    player.disconnectDeadlineAt = null;
+  }
+}
+
+function clearRoomTimers(room) {
+  clearNextHandTimer(room);
+  clearActionTimer(room);
+
+  if (!room.gameSession) {
+    return;
+  }
+
+  for (const timer of room.gameSession.disconnectTimers.values()) {
+    clearTimeout(timer);
+  }
+  room.gameSession.disconnectTimers.clear();
 }
 
 module.exports = {

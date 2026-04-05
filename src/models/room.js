@@ -26,7 +26,15 @@ function createRoom({ code, ownerId, bigBlind, maxPlayers }) {
     gameSession: {
       active: false,
       restartDelayMs: 4000,
+      actionTimeoutMs: 25000,
+      disconnectGraceMs: 30000,
       nextHandTimer: null,
+      actionTimeoutTimer: null,
+      actionPlayerId: null,
+      actionSeatIndex: null,
+      actionHandId: null,
+      actionDeadlineAt: null,
+      disconnectTimers: new Map(),
     },
   };
 }
