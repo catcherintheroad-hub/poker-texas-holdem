@@ -183,6 +183,13 @@ function handleStartGame({ context, socket, store }) {
     return;
   }
 
+  if (room.phase !== 'waiting') {
+    sendJson(socket, { type: 'error', message: '当前手牌尚未结束' });
+    return;
+  }
+
+  clearNextHandTimer(room);
+  room.gameSession.active = true;
   initializeHand(room);
   broadcastGameState(room, store);
 }
@@ -281,6 +288,7 @@ function removePlayerFromRoom(room, playerId, store) {
   room.updatedAt = Date.now();
 
   if (room.players.length === 0) {
+    clearNextHandTimer(room);
     store.rooms.delete(room.code);
     return;
   }
@@ -356,6 +364,7 @@ function publishOutcome(room, store, outcome) {
         sidePots: outcome.sidePots || [],
       });
       broadcastGameState(room, store);
+      scheduleNextHand(room, store);
       return;
     case 'showdown_pending':
       broadcastGameState(room, store);
@@ -369,6 +378,56 @@ function publishOutcome(room, store, outcome) {
     default:
       broadcastGameState(room, store);
   }
+}
+
+function scheduleNextHand(room, store) {
+  clearNextHandTimer(room);
+
+  if (!room.gameSession.active) {
+    return;
+  }
+
+  const eligiblePlayers = room.players.filter((player) => player.chips > 0);
+  if (eligiblePlayers.length < DEFAULTS.minPlayers) {
+    room.gameSession.active = false;
+    broadcastRoom(room, store, {
+      type: 'game_over',
+      winner: eligiblePlayers[0] ? eligiblePlayers[0].name : null,
+      finalScores: serializeRoomLobby(room).scores,
+    });
+    return;
+  }
+
+  room.gameSession.nextHandTimer = setTimeout(() => {
+    room.gameSession.nextHandTimer = null;
+
+    if (!store.rooms.has(room.code) || !room.gameSession.active) {
+      return;
+    }
+
+    const readyPlayers = room.players.filter((player) => player.chips > 0);
+    if (readyPlayers.length < DEFAULTS.minPlayers) {
+      room.gameSession.active = false;
+      broadcastRoom(room, store, {
+        type: 'game_over',
+        winner: readyPlayers[0] ? readyPlayers[0].name : null,
+        finalScores: serializeRoomLobby(room).scores,
+      });
+      return;
+    }
+
+    initializeHand(room);
+    broadcastGameState(room, store);
+  }, room.gameSession.restartDelayMs);
+}
+
+function clearNextHandTimer(room) {
+  if (!room.gameSession || !room.gameSession.nextHandTimer) {
+    return;
+  }
+
+  clearTimeout(room.gameSession.nextHandTimer);
+  room.gameSession.nextHandTimer = null;
 }
 
 module.exports = {

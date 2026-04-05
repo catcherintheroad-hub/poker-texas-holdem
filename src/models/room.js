@@ -23,6 +23,11 @@ function createRoom({ code, ownerId, bigBlind, maxPlayers }) {
     settings: {
       startingChips: DEFAULTS.startingChips,
     },
+    gameSession: {
+      active: false,
+      restartDelayMs: 4000,
+      nextHandTimer: null,
+    },
   };
 }
 
