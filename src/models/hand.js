@@ -9,10 +9,13 @@ function createEmptyHandState() {
     pot: 0,
     currentBet: 0,
     minRaise: 0,
+    lastRaiseSize: 0,
     buttonSeatIndex: -1,
     smallBlindSeatIndex: -1,
     bigBlindSeatIndex: -1,
     actingSeatIndex: -1,
+    pendingSeatIndexes: [],
+    showdownSeatIndexes: [],
     handNumber: 0,
     actionLog: [],
   };

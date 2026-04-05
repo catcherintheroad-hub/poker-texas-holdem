@@ -1,15 +1,13 @@
 'use strict';
 
-const WebSocket = require('ws');
-const { createDeck, drawCards, shuffleDeck } = require('../../engine/cards');
+const { cardToString } = require('../../engine/cards');
+const { applyAction, handlePlayerExit, initializeHand } = require('../../engine/hand-flow');
 const { DEFAULTS } = require('../../engine/rules');
 const {
   findNextAvailableSeat,
-  findPlayerBySeat,
   getNextOccupiedSeat,
   sortPlayersBySeat,
 } = require('../../engine/seats');
-const { createHandState } = require('../../models/hand');
 const { createPlayer } = require('../../models/player');
 const { createRoom } = require('../../models/room');
 const {
@@ -63,7 +61,7 @@ function routeMessage({ context, message, socket, store }) {
       handleStartGame({ context, socket, store });
       return;
     case 'action':
-      handleAction({ context, socket, store });
+      handleAction({ context, message, socket, store });
       return;
     case 'chat':
       handleChat({ context, message, socket, store });
@@ -189,17 +187,26 @@ function handleStartGame({ context, socket, store }) {
   broadcastGameState(room, store);
 }
 
-function handleAction({ context, socket, store }) {
+function handleAction({ context, message, socket, store }) {
   const room = getRoomForContext(context, store);
   if (!room) {
     sendJson(socket, { type: 'error', message: '房间不存在' });
     return;
   }
 
-  sendJson(socket, {
-    type: 'error',
-    message: '当前分支只完成了引擎骨架，下注与结算逻辑将在后续分支实现',
-  });
+  const player = room.players.find((entry) => entry.id === context.playerId);
+  if (!player) {
+    sendJson(socket, { type: 'error', message: '玩家不存在' });
+    return;
+  }
+
+  const result = applyAction(room, player, message.action, message.amount);
+  if (!result.ok) {
+    sendJson(socket, { type: 'error', message: result.error });
+    return;
+  }
+
+  publishOutcome(room, store, result.outcome);
 }
 
 function handleChat({ context, message, socket, store }) {
@@ -264,6 +271,7 @@ function handleDisconnect({ context, store }) {
 }
 
 function removePlayerFromRoom(room, playerId, store) {
+  const outcome = handlePlayerExit(room, playerId);
   const playerIndex = room.players.findIndex((player) => player.id === playerId);
   if (playerIndex < 0) {
     return;
@@ -281,7 +289,7 @@ function removePlayerFromRoom(room, playerId, store) {
     room.ownerId = sortPlayersBySeat(room.players)[0].id;
   }
 
-  if (room.hand.actingSeatIndex === player.seatIndex) {
+  if (room.phase !== 'waiting' && room.hand.actingSeatIndex === player.seatIndex) {
     room.hand.actingSeatIndex = getNextOccupiedSeat(room.players, player.seatIndex, room.maxPlayers);
   }
 
@@ -293,79 +301,14 @@ function removePlayerFromRoom(room, playerId, store) {
     scores: serializeRoomLobby(room).scores,
   });
 
+  if (outcome) {
+    publishOutcome(room, store, outcome);
+    return;
+  }
+
   if (room.phase !== 'waiting') {
     broadcastGameState(room, store);
   }
-}
-
-function initializeHand(room) {
-  const seatedPlayers = sortPlayersBySeat(room.players).filter((player) => player.chips > 0);
-  const isHeadsUp = seatedPlayers.length === 2;
-  const buttonSeatIndex = getNextOccupiedSeat(
-    seatedPlayers,
-    room.buttonSeatIndex >= 0 ? room.buttonSeatIndex : seatedPlayers[seatedPlayers.length - 1].seatIndex,
-    room.maxPlayers,
-  );
-  const smallBlindSeatIndex = isHeadsUp
-    ? buttonSeatIndex
-    : getNextOccupiedSeat(seatedPlayers, buttonSeatIndex, room.maxPlayers);
-  const bigBlindSeatIndex = getNextOccupiedSeat(seatedPlayers, smallBlindSeatIndex, room.maxPlayers);
-  const actingSeatIndex = isHeadsUp
-    ? smallBlindSeatIndex
-    : getNextOccupiedSeat(seatedPlayers, bigBlindSeatIndex, room.maxPlayers);
-  const deck = shuffleDeck(createDeck());
-
-  for (const player of room.players) {
-    player.holeCards = [];
-    player.status = player.chips > 0 ? 'active' : 'sitting_out';
-    player.connectionState = 'connected';
-    player.committedChips = 0;
-    player.hasFolded = false;
-    player.isAllIn = false;
-    player.lastAction = null;
-  }
-
-  for (const player of seatedPlayers) {
-    player.holeCards = drawCards(deck, 2);
-  }
-
-  const smallBlindAmount = postBlind(findPlayerBySeat(room.players, smallBlindSeatIndex), room.blinds.small);
-  const bigBlindAmount = postBlind(findPlayerBySeat(room.players, bigBlindSeatIndex), room.blinds.big);
-
-  room.buttonSeatIndex = buttonSeatIndex;
-  room.phase = 'preflop';
-  room.hand = createHandState({
-    id: `${room.code}-${Date.now()}`,
-    phase: 'preflop',
-    deck,
-    board: [],
-    // This branch only bootstraps a hand and turn order; betting progression comes later.
-    pot: smallBlindAmount + bigBlindAmount,
-    currentBet: room.blinds.big,
-    minRaise: room.blinds.big * 2,
-    buttonSeatIndex,
-    smallBlindSeatIndex,
-    bigBlindSeatIndex,
-    actingSeatIndex,
-    handNumber: room.hand.handNumber + 1,
-    actionLog: [
-      { type: 'system', message: 'Hand initialized from modular engine scaffold' },
-    ],
-  });
-  room.updatedAt = Date.now();
-}
-
-function postBlind(player, amount) {
-  if (!player) {
-    return 0;
-  }
-
-  const blindAmount = Math.min(amount, player.chips);
-  player.chips -= blindAmount;
-  player.committedChips = blindAmount;
-  player.isAllIn = player.chips === 0;
-  player.lastAction = blindAmount === amount ? `blind ${blindAmount}` : `all-in blind ${blindAmount}`;
-  return blindAmount;
 }
 
 function getRoomForContext(context, store) {
@@ -387,6 +330,43 @@ function clampNumber(value, min, max, fallback) {
   }
 
   return Math.min(max, Math.max(min, number));
+}
+
+function publishOutcome(room, store, outcome) {
+  if (!outcome) {
+    broadcastGameState(room, store);
+    return;
+  }
+
+  switch (outcome.type) {
+    case 'hand_result':
+      broadcastRoom(room, store, {
+        type: 'hand_result',
+        winners: outcome.winners.map((winner) => ({
+          id: winner.id,
+          name: winner.name,
+          hand: winner.hand.map(cardToString),
+          handType: outcome.handType,
+        })),
+        prize: outcome.prize,
+        pot: outcome.pot,
+        communityCards: outcome.communityCards.map(cardToString),
+        scores: serializeRoomLobby(room).scores,
+      });
+      broadcastGameState(room, store);
+      return;
+    case 'showdown_pending':
+      broadcastGameState(room, store);
+      broadcastRoom(room, store, {
+        type: 'error',
+        message: '已进入 showdown，牌型比较与分池将在下一分支完成',
+      });
+      return;
+    case 'phase_advanced':
+    case 'state_only':
+    default:
+      broadcastGameState(room, store);
+  }
 }
 
 module.exports = {
