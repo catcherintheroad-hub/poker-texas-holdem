@@ -45,6 +45,19 @@ test('initializeHand applies heads-up blind and acting-seat rules', () => {
   assert.equal(room.hand.actingSeatIndex, 0);
 });
 
+test('initializeHand skips disconnected players when seating a new hand', () => {
+  const room = createTestRoom(['a', 'b', 'c']);
+  room.players[2].connectionState = 'disconnected';
+
+  initializeHand(room);
+
+  assert.equal(room.players[0].holeCards.length, 2);
+  assert.equal(room.players[1].holeCards.length, 2);
+  assert.equal(room.players[2].holeCards.length, 0);
+  assert.equal(room.hand.smallBlindSeatIndex, 0);
+  assert.equal(room.hand.bigBlindSeatIndex, 1);
+});
+
 test('preflop action sequence advances to flop', () => {
   const room = createTestRoom(['a', 'b', 'c']);
 
@@ -66,6 +79,31 @@ test('preflop action sequence advances to flop', () => {
   assert.equal(room.hand.board.length, 3);
 });
 
+test('short all-in increases the bet without reopening raising to prior actors', () => {
+  const room = createTestRoom(['a', 'b', 'c']);
+  room.players[1].chips = 45;
+
+  initializeHand(room);
+
+  let actor = actingPlayer(room);
+  let result = applyAction(room, actor, 'raise', 40);
+  assert.equal(result.ok, true);
+
+  actor = actingPlayer(room);
+  result = applyAction(room, actor, 'allin', 0);
+  assert.equal(result.ok, true);
+  assert.equal(room.hand.currentBet, 45);
+
+  actor = actingPlayer(room);
+  result = applyAction(room, actor, 'call', 0);
+  assert.equal(result.ok, true);
+
+  actor = actingPlayer(room);
+  result = applyAction(room, actor, 'raise', 100);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /未重新打开加注权限/);
+});
+
 test('river showdown resolves side pots across multiple winners', () => {
   const room = createTestRoom(['a', 'b', 'c']);
   const [a, b, c] = room.players;
@@ -85,6 +123,7 @@ test('river showdown resolves side pots across multiple winners', () => {
     bigBlindSeatIndex: 2,
     actingSeatIndex: 0,
     pendingSeatIndexes: [0],
+    raiseRightsSeatIndexes: [0],
     showdownSeatIndexes: [],
     handNumber: 1,
     actionLog: [],
@@ -126,6 +165,7 @@ test('folded players leave dead chips in the pot but cannot win at showdown', ()
     bigBlindSeatIndex: 2,
     actingSeatIndex: 0,
     pendingSeatIndexes: [0],
+    raiseRightsSeatIndexes: [0],
     showdownSeatIndexes: [],
     handNumber: 1,
     actionLog: [],

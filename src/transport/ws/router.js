@@ -14,6 +14,7 @@ const {
   broadcastGameState,
   broadcastRoom,
   sendJson,
+  serializeGameState,
   serializeRoomLobby,
 } = require('./messages');
 
@@ -56,6 +57,9 @@ function routeMessage({ context, message, socket, store }) {
       return;
     case 'join_room':
       handleJoinRoom({ context, message, socket, store });
+      return;
+    case 'resume_session':
+      handleResumeSession({ context, message, socket, store });
       return;
     case 'start_game':
       handleStartGame({ context, socket, store });
@@ -165,6 +169,43 @@ function handleJoinRoom({ context, message, socket, store }) {
   });
 }
 
+function handleResumeSession({ context, message, socket, store }) {
+  const playerId = String(message.playerId || '').trim();
+  const roomCode = String(message.roomCode || '').trim().toUpperCase();
+  const room = store.rooms.get(roomCode);
+
+  if (!playerId || !room) {
+    sendJson(socket, { type: 'session_invalid', message: '会话不存在或已失效' });
+    return;
+  }
+
+  const player = room.players.find((entry) => entry.id === playerId);
+  if (!player) {
+    sendJson(socket, { type: 'session_invalid', message: '玩家会话不存在或已失效' });
+    return;
+  }
+
+  store.sockets.delete(context.playerId);
+  context.playerId = playerId;
+  context.roomCode = roomCode;
+  store.sockets.set(playerId, socket);
+
+  player.connectionState = 'connected';
+  room.updatedAt = Date.now();
+
+  sendJson(socket, {
+    type: 'session_resumed',
+    roomCode,
+    playerId,
+    room: serializeRoomLobby(room),
+    gameState: room.phase === 'waiting' ? null : serializeGameState(room, playerId),
+  });
+
+  if (room.phase !== 'waiting') {
+    broadcastGameState(room, store);
+  }
+}
+
 function handleStartGame({ context, socket, store }) {
   const room = getRoomForContext(context, store);
   if (!room) {
@@ -177,7 +218,7 @@ function handleStartGame({ context, socket, store }) {
     return;
   }
 
-  const eligiblePlayers = room.players.filter((player) => player.chips > 0);
+  const eligiblePlayers = room.players.filter((player) => player.chips > 0 && player.connectionState === 'connected');
   if (eligiblePlayers.length < DEFAULTS.minPlayers) {
     sendJson(socket, { type: 'error', message: '至少需要2名有筹码的玩家' });
     return;
@@ -270,11 +311,10 @@ function handleLeaveRoom({ context, store }) {
 function handleDisconnect({ context, store }) {
   const room = getRoomForContext(context, store);
   if (room) {
-    removePlayerFromRoom(room, context.playerId, store);
+    markPlayerDisconnected(room, context.playerId, store);
   }
 
   store.sockets.delete(context.playerId);
-  context.roomCode = null;
 }
 
 function removePlayerFromRoom(room, playerId, store) {
@@ -308,6 +348,30 @@ function removePlayerFromRoom(room, playerId, store) {
     newOwnerId: room.ownerId,
     scores: serializeRoomLobby(room).scores,
   });
+
+  if (outcome) {
+    publishOutcome(room, store, outcome);
+    return;
+  }
+
+  if (room.phase !== 'waiting') {
+    broadcastGameState(room, store);
+  }
+}
+
+function markPlayerDisconnected(room, playerId, store) {
+  const player = room.players.find((entry) => entry.id === playerId);
+  if (!player) {
+    return;
+  }
+
+  player.connectionState = 'disconnected';
+  room.updatedAt = Date.now();
+
+  let outcome = null;
+  if (room.phase !== 'waiting') {
+    outcome = handlePlayerExit(room, playerId);
+  }
 
   if (outcome) {
     publishOutcome(room, store, outcome);
@@ -387,7 +451,7 @@ function scheduleNextHand(room, store) {
     return;
   }
 
-  const eligiblePlayers = room.players.filter((player) => player.chips > 0);
+  const eligiblePlayers = room.players.filter((player) => player.chips > 0 && player.connectionState === 'connected');
   if (eligiblePlayers.length < DEFAULTS.minPlayers) {
     room.gameSession.active = false;
     broadcastRoom(room, store, {
@@ -405,7 +469,7 @@ function scheduleNextHand(room, store) {
       return;
     }
 
-    const readyPlayers = room.players.filter((player) => player.chips > 0);
+    const readyPlayers = room.players.filter((player) => player.chips > 0 && player.connectionState === 'connected');
     if (readyPlayers.length < DEFAULTS.minPlayers) {
       room.gameSession.active = false;
       broadcastRoom(room, store, {

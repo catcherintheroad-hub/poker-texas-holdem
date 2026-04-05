@@ -300,13 +300,20 @@ let myRoomCode = null;
 let currentPhase = 'waiting';
 let gameState = null;
 let isMyTurn = false;
+const SESSION_KEY = 'poker-session';
 
 // ============================================================
 // WEBSOCKET
 // ============================================================
 function connect() {
   ws = new WebSocket(WS_URL);
-  ws.onopen = () => console.log('Connected');
+  ws.onopen = () => {
+    console.log('Connected');
+    const session = loadSession();
+    if (session?.playerId && session?.roomCode) {
+      send({ type: 'resume_session', playerId: session.playerId, roomCode: session.roomCode });
+    }
+  };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     handleMessage(msg);
@@ -331,15 +338,31 @@ function handleMessage(msg) {
   switch (msg.type) {
     case 'room_created':
     case 'room_joined':
+    case 'session_resumed':
       myPlayerId = msg.playerId;
       myRoomCode = msg.roomCode;
-      showScreen('waiting');
-      document.getElementById('display-room-code').textContent = msg.roomCode;
-      updateWaitingRoom(msg.room);
+      saveSession({ playerId: myPlayerId, roomCode: myRoomCode });
+      if (msg.gameState) {
+        currentPhase = msg.gameState.phase;
+        gameState = msg.gameState;
+        renderTable(msg.gameState);
+      } else {
+        showScreen('waiting');
+        document.getElementById('display-room-code').textContent = msg.roomCode;
+        updateWaitingRoom(msg.room);
+      }
       break;
 
     case 'error':
       showNotif(msg.message, 'error');
+      break;
+
+    case 'session_invalid':
+      clearSession();
+      myPlayerId = null;
+      myRoomCode = null;
+      showScreen('lobby');
+      showNotif(msg.message || '连接会话已失效', 'error');
       break;
 
     case 'player_joined':
@@ -398,6 +421,8 @@ function startGame() {
 function leaveRoom() {
   send({ type: 'leave_room' });
   myRoomCode = null;
+  myPlayerId = null;
+  clearSession();
   showScreen('lobby');
 }
 
@@ -678,6 +703,22 @@ function getEmoji(name) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return emojis[Math.abs(hash) % emojis.length];
+}
+
+function saveSession(session) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+function loadSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

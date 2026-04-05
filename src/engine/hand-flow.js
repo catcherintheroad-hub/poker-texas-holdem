@@ -65,6 +65,7 @@ function initializeHand(room) {
     bigBlindSeatIndex,
     actingSeatIndex,
     pendingSeatIndexes: buildPendingSeatIndexes(room, actingSeatIndex),
+    raiseRightsSeatIndexes: buildRaiseRightsSeatIndexes(room, actingSeatIndex),
     handNumber: room.hand.handNumber + 1,
     actionLog: [
       { type: 'system', message: 'Hand initialized from modular engine scaffold' },
@@ -95,6 +96,7 @@ function applyAction(room, player, action, amount) {
       player.status = 'folded';
       player.lastAction = 'fold';
       removePendingSeat(room.hand.pendingSeatIndexes, player.seatIndex);
+      removeRaiseRight(room.hand.raiseRightsSeatIndexes, player.seatIndex);
       break;
     case 'check':
       if (toCall !== 0) {
@@ -102,6 +104,7 @@ function applyAction(room, player, action, amount) {
       }
       player.lastAction = 'check';
       removePendingSeat(room.hand.pendingSeatIndexes, player.seatIndex);
+      removeRaiseRight(room.hand.raiseRightsSeatIndexes, player.seatIndex);
       break;
     case 'call': {
       if (toCall <= 0) {
@@ -111,9 +114,13 @@ function applyAction(room, player, action, amount) {
       commitChips(room, player, commitAmount);
       player.lastAction = commitAmount < toCall ? `all-in ${commitAmount}` : `call ${commitAmount}`;
       removePendingSeat(room.hand.pendingSeatIndexes, player.seatIndex);
+      removeRaiseRight(room.hand.raiseRightsSeatIndexes, player.seatIndex);
       break;
     }
     case 'bet': {
+      if (!canSeatRaise(room, player.seatIndex)) {
+        return { ok: false, error: '当前不能下注或加注' };
+      }
       if (room.hand.currentBet !== 0) {
         return { ok: false, error: '当前不能下注，请使用加注' };
       }
@@ -127,6 +134,9 @@ function applyAction(room, player, action, amount) {
       break;
     }
     case 'raise': {
+      if (!canSeatRaise(room, player.seatIndex)) {
+        return { ok: false, error: '短码 all-in 未重新打开加注权限' };
+      }
       if (room.hand.currentBet === 0) {
         return { ok: false, error: '当前无人下注，请使用 bet' };
       }
@@ -145,7 +155,11 @@ function applyAction(room, player, action, amount) {
       const commitAmount = totalBet - player.committedChips;
       commitChips(room, player, commitAmount);
       player.lastAction = player.isAllIn && totalBet > room.hand.currentBet ? `all-in ${commitAmount}` : `raise to ${totalBet}`;
-      registerAggressiveAction(room, player, totalBet);
+      if (isFullRaise(room, totalBet)) {
+        registerAggressiveAction(room, player, totalBet);
+      } else {
+        registerShortAllInAction(room, player, totalBet);
+      }
       break;
     }
     case 'allin': {
@@ -153,14 +167,22 @@ function applyAction(room, player, action, amount) {
       if (totalBet <= player.committedChips) {
         return { ok: false, error: '没有可全下的筹码' };
       }
+      if (totalBet > room.hand.currentBet && !canSeatRaise(room, player.seatIndex)) {
+        return { ok: false, error: '短码 all-in 未重新打开加注权限' };
+      }
       const commitAmount = player.chips;
       commitChips(room, player, commitAmount);
       player.lastAction = `all-in ${commitAmount}`;
 
       if (totalBet > room.hand.currentBet) {
-        registerAggressiveAction(room, player, totalBet);
+        if (isFullRaise(room, totalBet)) {
+          registerAggressiveAction(room, player, totalBet);
+        } else {
+          registerShortAllInAction(room, player, totalBet);
+        }
       } else {
         removePendingSeat(room.hand.pendingSeatIndexes, player.seatIndex);
+        removeRaiseRight(room.hand.raiseRightsSeatIndexes, player.seatIndex);
       }
       break;
     }
@@ -232,6 +254,7 @@ function initializeBettingRound(room, phase, actingSeatIndex) {
   room.hand.lastRaiseSize = room.blinds.big;
   room.hand.actingSeatIndex = actingSeatIndex;
   room.hand.pendingSeatIndexes = buildPendingSeatIndexes(room, actingSeatIndex);
+  room.hand.raiseRightsSeatIndexes = buildRaiseRightsSeatIndexes(room, actingSeatIndex);
 
   for (const player of room.players) {
     player.committedChips = 0;
@@ -336,6 +359,19 @@ function registerAggressiveAction(room, player, totalBet) {
   room.hand.lastRaiseSize = Math.max(room.hand.lastRaiseSize, raiseSize);
   room.hand.minRaise = room.hand.currentBet + room.hand.lastRaiseSize;
   room.hand.pendingSeatIndexes = buildPendingSeatIndexes(room, getNextActingSeat(room, player.seatIndex), player.seatIndex);
+  room.hand.raiseRightsSeatIndexes = buildRaiseRightsSeatIndexes(room, getNextActingSeat(room, player.seatIndex), player.seatIndex);
+  room.hand.actingSeatIndex = getNextActingSeat(room, player.seatIndex);
+}
+
+function registerShortAllInAction(room, player, totalBet) {
+  room.hand.currentBet = totalBet;
+  room.hand.minRaise = room.hand.currentBet + room.hand.lastRaiseSize;
+  room.hand.pendingSeatIndexes = buildPendingSeatIndexesForCurrentBet(
+    room,
+    getNextActingSeat(room, player.seatIndex),
+    player.seatIndex,
+  );
+  removeRaiseRight(room.hand.raiseRightsSeatIndexes, player.seatIndex);
   room.hand.actingSeatIndex = getNextActingSeat(room, player.seatIndex);
 }
 
@@ -347,6 +383,31 @@ function buildPendingSeatIndexes(room, firstSeatIndex, excludedSeatIndex = null)
     if (seatIndex !== excludedSeatIndex) {
       const player = findPlayerBySeat(room.players, seatIndex);
       if (player && canPlayerAct(player)) {
+        pending.push(seatIndex);
+      }
+    }
+
+    seatIndex = getNextActingSeat(room, seatIndex);
+    if (seatIndex === firstSeatIndex) {
+      break;
+    }
+  }
+
+  return pending;
+}
+
+function buildRaiseRightsSeatIndexes(room, firstSeatIndex, excludedSeatIndex = null) {
+  return buildPendingSeatIndexes(room, firstSeatIndex, excludedSeatIndex);
+}
+
+function buildPendingSeatIndexesForCurrentBet(room, firstSeatIndex, excludedSeatIndex = null) {
+  const pending = [];
+  let seatIndex = firstSeatIndex;
+
+  while (seatIndex >= 0 && !pending.includes(seatIndex)) {
+    if (seatIndex !== excludedSeatIndex) {
+      const player = findPlayerBySeat(room.players, seatIndex);
+      if (player && canPlayerAct(player) && player.committedChips < room.hand.currentBet) {
         pending.push(seatIndex);
       }
     }
@@ -395,7 +456,7 @@ function getActionablePlayers(room) {
 }
 
 function getHandParticipants(room) {
-  return sortPlayersBySeat(room.players).filter((player) => player.chips > 0);
+  return sortPlayersBySeat(room.players).filter((player) => player.chips > 0 && player.connectionState === 'connected');
 }
 
 function getRemainingPlayers(room) {
@@ -464,6 +525,21 @@ function removePendingSeat(pendingSeatIndexes, seatIndex) {
   if (index >= 0) {
     pendingSeatIndexes.splice(index, 1);
   }
+}
+
+function removeRaiseRight(raiseRightsSeatIndexes, seatIndex) {
+  const index = raiseRightsSeatIndexes.indexOf(seatIndex);
+  if (index >= 0) {
+    raiseRightsSeatIndexes.splice(index, 1);
+  }
+}
+
+function canSeatRaise(room, seatIndex) {
+  return room.hand.raiseRightsSeatIndexes.includes(seatIndex);
+}
+
+function isFullRaise(room, totalBet) {
+  return totalBet - room.hand.currentBet >= room.hand.lastRaiseSize;
 }
 
 function resolveShowdown(room) {

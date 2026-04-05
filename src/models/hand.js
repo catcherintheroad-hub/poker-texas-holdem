@@ -15,6 +15,7 @@ function createEmptyHandState() {
     bigBlindSeatIndex: -1,
     actingSeatIndex: -1,
     pendingSeatIndexes: [],
+    raiseRightsSeatIndexes: [],
     showdownSeatIndexes: [],
     handNumber: 0,
     actionLog: [],
