@@ -53,6 +53,15 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .table-info { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #888; }
 .table-info .room-label { font-size: 11px; color: var(--gold); font-weight: bold; }
 .score-link { color: var(--gold); cursor: pointer; text-decoration: underline; }
+.session-status { margin-top: 8px; font-size: 12px; color: #8fa0b5; text-align: center; }
+.control-row { display: flex; gap: 8px; width: 100%; max-width: 360px; margin-top: 10px; }
+.mini-btn {
+  flex: 1; background: #1e2642; color: var(--text); border: 1px solid #2c3e50;
+  border-radius: 10px; padding: 10px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.mini-btn.active { border-color: var(--gold); color: var(--gold); }
+.mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.status-muted { color: #8fa0b5; }
 
 /* COMMUNITY CARDS */
 .community-area { background: var(--felt); padding: 12px; text-align: center; border-bottom: 2px solid #0a0f1e; }
@@ -220,6 +229,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
     <div id="player-count-display" style="color:#888;font-size:14px;margin-bottom:16px">等待玩家...</div>
     <div id="player-list" class="player-list"></div>
   </div>
+  <div class="control-row">
+    <button id="wait-sit-in" class="mini-btn" onclick="setParticipation('sit_in')">Sit In</button>
+    <button id="wait-sit-out" class="mini-btn" onclick="setParticipation('sit_out')">Sit Out</button>
+    <button id="wait-spectate" class="mini-btn" onclick="setParticipation('spectate')">Spectate</button>
+  </div>
+  <div class="session-status" id="session-status">连接中...</div>
   <button id="start-btn" class="btn" onclick="startGame()" disabled>等待至少2人后开始</button>
   <button class="btn btn-danger" style="max-width:200px;margin-top:8px" onclick="leaveRoom()">离开房间</button>
 </div>
@@ -235,6 +250,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       </div>
       <div class="score-link" onclick="showScoreboard()">🏆 积分榜</div>
     </div>
+    <div class="control-row" style="max-width:none;margin-top:10px">
+      <button id="table-sit-in" class="mini-btn" onclick="setParticipation('sit_in')">Sit In</button>
+      <button id="table-sit-out" class="mini-btn" onclick="setParticipation('sit_out')">Sit Out</button>
+      <button id="table-spectate" class="mini-btn" onclick="setParticipation('spectate')">Spectate</button>
+    </div>
+    <div class="session-status" id="table-session-status">连接中...</div>
   </div>
 
   <div class="community-area">
@@ -301,6 +322,8 @@ let currentPhase = 'waiting';
 let gameState = null;
 let isMyTurn = false;
 const SESSION_KEY = 'poker-session';
+let socketState = 'connecting';
+let isRestoringSession = false;
 
 // ============================================================
 // WEBSOCKET
@@ -308,10 +331,16 @@ const SESSION_KEY = 'poker-session';
 function connect() {
   ws = new WebSocket(WS_URL);
   ws.onopen = () => {
+    socketState = 'connected';
     console.log('Connected');
     const session = loadSession();
     if (session?.playerId && session?.roomCode) {
+      isRestoringSession = true;
+      updateSessionStatus();
       send({ type: 'resume_session', playerId: session.playerId, roomCode: session.roomCode });
+    } else {
+      isRestoringSession = false;
+      updateSessionStatus();
     }
   };
   ws.onmessage = (e) => {
@@ -319,6 +348,9 @@ function connect() {
     handleMessage(msg);
   };
   ws.onclose = () => {
+    socketState = 'reconnecting';
+    isRestoringSession = false;
+    updateSessionStatus();
     showNotif('连接断开，正在重连...', 'error');
     setTimeout(connect, 2000);
   };
@@ -341,7 +373,10 @@ function handleMessage(msg) {
     case 'session_resumed':
       myPlayerId = msg.playerId;
       myRoomCode = msg.roomCode;
+      socketState = 'connected';
+      isRestoringSession = false;
       saveSession({ playerId: myPlayerId, roomCode: myRoomCode });
+      updateSessionStatus();
       if (msg.gameState) {
         currentPhase = msg.gameState.phase;
         gameState = msg.gameState;
@@ -358,9 +393,12 @@ function handleMessage(msg) {
       break;
 
     case 'session_invalid':
+      socketState = 'connected';
+      isRestoringSession = false;
       clearSession();
       myPlayerId = null;
       myRoomCode = null;
+      updateSessionStatus();
       showScreen('lobby');
       showNotif(msg.message || '连接会话已失效', 'error');
       break;
@@ -429,6 +467,7 @@ function leaveRoom() {
   myRoomCode = null;
   myPlayerId = null;
   clearSession();
+  updateSessionStatus();
   showScreen('lobby');
 }
 
@@ -441,10 +480,14 @@ function updateWaitingRoom(room) {
   for (const p of room.players) {
     const div = document.createElement('div');
     div.className = 'player-list-item';
+    const statusBits = [];
+    if (p.connectionState === 'disconnected') statusBits.push('断线');
+    if (p.isSittingOut) statusBits.push('Sit Out');
     div.innerHTML = `
       <div class="avatar">${getEmoji(p.name)}</div>
       <div style="font-size:15px">${p.name}</div>
       <div style="font-size:12px;color:#888">${p.chips} 筹码</div>
+      ${statusBits.length ? `<div class="status-muted">${statusBits.join(' · ')}</div>` : ''}
       ${p.id === myPlayerId ? '<span class="is-owner">你</span>' : ''}
     `;
     list.appendChild(div);
@@ -459,6 +502,9 @@ function updateWaitingRoom(room) {
     startBtn.textContent = '等待至少2人后开始';
   }
   document.getElementById('table-room-code').textContent = myRoomCode || '';
+  const me = room.players.find(p => p.id === myPlayerId);
+  updateParticipationButtons(me);
+  updateSessionStatus();
 }
 
 // ============================================================
@@ -517,6 +563,8 @@ function renderTable(state) {
     let statusHtml = '';
     if (p.isFolded) statusHtml = '<span class="player-status status-folded">弃牌</span>';
     else if (p.isAllIn) statusHtml = '<span class="player-status status-allin">All-in</span>';
+    else if (p.connectionState === 'disconnected') statusHtml = '<span class="player-status status-folded">断线</span>';
+    else if (p.isSittingOut) statusHtml = '<span class="player-status status-folded">旁观</span>';
     else if (p.isCurrentTurn) statusHtml = '<span class="player-status status-active">行动中</span>';
 
     const lastAction = p.lastAction ? `<div class="player-bet">${p.lastAction}</div>` : '';
@@ -537,6 +585,8 @@ function renderTable(state) {
 
   // Your hand
   const myP = state.players.find(p => p.id === myPlayerId);
+  updateParticipationButtons(myP);
+  updateSessionStatus(myP);
   const yourHandArea = document.getElementById('your-hand-area');
   const myCards = document.getElementById('my-cards');
   if (myP && myP.hand && myP.hand[0] && myP.hand[0] !== '?') {
@@ -624,6 +674,10 @@ function doAction(action) {
   const amount = parseInt(betInput.value) || 0;
   send({ type: 'action', action, amount });
   betInput.value = '';
+}
+
+function setParticipation(mode) {
+  send({ type: mode });
 }
 
 function showScoreboard() {
@@ -727,8 +781,55 @@ function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
+function updateParticipationButtons(me) {
+  const isSittingOut = !!me?.isSittingOut;
+  const buttons = {
+    sit_in: [document.getElementById('wait-sit-in'), document.getElementById('table-sit-in')],
+    sit_out: [document.getElementById('wait-sit-out'), document.getElementById('table-sit-out')],
+    spectate: [document.getElementById('wait-spectate'), document.getElementById('table-spectate')],
+  };
+
+  Object.values(buttons).flat().forEach((btn) => {
+    if (!btn) return;
+    btn.classList.remove('active');
+  });
+
+  buttons.sit_in.forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = !myRoomCode || (me && !isSittingOut);
+    if (me && !isSittingOut) btn.classList.add('active');
+  });
+  buttons.sit_out.forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = !myRoomCode || (me && isSittingOut);
+    if (me && isSittingOut) btn.classList.add('active');
+  });
+  buttons.spectate.forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = !myRoomCode || (me && isSittingOut);
+  });
+}
+
+function updateSessionStatus(me) {
+  const statusText = isRestoringSession
+    ? '正在恢复会话...'
+    : socketState === 'reconnecting'
+      ? '连接中断，正在重连...'
+      : me?.connectionState === 'disconnected'
+        ? '你当前处于断线宽限期'
+        : myRoomCode
+          ? '会话已连接'
+          : '未加入房间';
+
+  const waiting = document.getElementById('session-status');
+  const table = document.getElementById('table-session-status');
+  if (waiting) waiting.textContent = statusText;
+  if (table) table.textContent = statusText;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('name-input').focus();
   document.getElementById('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') createRoom(); });
   document.getElementById('join-code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+  updateSessionStatus();
 });

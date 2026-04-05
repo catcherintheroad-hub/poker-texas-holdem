@@ -112,6 +112,7 @@ function handleCreateRoom({ context, message, socket, store }) {
   room.updatedAt = Date.now();
   store.rooms.set(code, room);
   context.roomCode = code;
+  logRoomEvent('room_created', { roomCode: code, playerId: context.playerId, maxPlayers, bigBlind });
 
   sendJson(socket, {
     type: 'room_created',
@@ -161,6 +162,7 @@ function handleJoinRoom({ context, message, socket, store }) {
   room.players.push(player);
   room.updatedAt = Date.now();
   context.roomCode = room.code;
+  logRoomEvent('player_joined', { roomCode: room.code, playerId: context.playerId, seatIndex });
 
   sendJson(socket, {
     type: 'room_joined',
@@ -204,6 +206,7 @@ function handleResumeSession({ context, message, socket, store }) {
   player.disconnectDeadlineAt = null;
   room.updatedAt = Date.now();
   clearDisconnectGraceTimer(room, playerId);
+  logRoomEvent('session_resumed', { roomCode, playerId, phase: room.phase });
 
   sendJson(socket, {
     type: 'session_resumed',
@@ -247,6 +250,7 @@ function handleStartGame({ context, socket, store }) {
   clearNextHandTimer(room);
   room.gameSession.active = true;
   initializeHand(room);
+  logRoomEvent('hand_started', { roomCode: room.code, handId: room.hand.id, handNumber: room.hand.handNumber });
   broadcastGameState(room, store);
   syncActionTimer(room, store);
 }
@@ -270,6 +274,13 @@ function handleAction({ context, message, socket, store }) {
     return;
   }
 
+  logRoomEvent('player_action', {
+    roomCode: room.code,
+    playerId: player.id,
+    action: message.action,
+    amount: message.amount || 0,
+    phase: room.phase,
+  });
   publishOutcome(room, store, result.outcome);
 }
 
@@ -329,6 +340,7 @@ function handleParticipationChange({ context, store, mode }) {
     player.isSittingOut = false;
     player.status = player.chips > 0 ? 'active' : player.status;
     room.updatedAt = Date.now();
+    logRoomEvent('player_sit_in', { roomCode: room.code, playerId: player.id });
     broadcastRoom(room, store, { type: 'room_updated', room: serializeRoomLobby(room) });
     if (room.phase !== 'waiting') {
       broadcastGameState(room, store);
@@ -342,6 +354,7 @@ function handleParticipationChange({ context, store, mode }) {
     player.status = 'spectating';
   }
   room.updatedAt = Date.now();
+  logRoomEvent(mode === 'spectate' ? 'player_spectate' : 'player_sit_out', { roomCode: room.code, playerId: player.id });
 
   let outcome = null;
   if (room.phase !== 'waiting' && player.holeCards.length > 0 && !player.hasFolded) {
@@ -435,6 +448,7 @@ function markPlayerDisconnected(room, playerId, store) {
   player.disconnectDeadlineAt = player.disconnectedAt + room.gameSession.disconnectGraceMs;
   room.updatedAt = Date.now();
   setDisconnectGraceTimer(room, playerId, store);
+  logRoomEvent('player_disconnected', { roomCode: room.code, playerId, disconnectDeadlineAt: player.disconnectDeadlineAt });
 
   broadcastRoom(room, store, { type: 'room_updated', room: serializeRoomLobby(room) });
   if (room.phase !== 'waiting') {
@@ -473,6 +487,11 @@ function publishOutcome(room, store, outcome) {
 
   switch (outcome.type) {
     case 'hand_result':
+      logRoomEvent('hand_result', {
+        roomCode: room.code,
+        pot: outcome.pot,
+        winners: outcome.winners.map((winner) => winner.id),
+      });
       broadcastRoom(room, store, {
         type: 'hand_result',
         winners: outcome.winners.map((winner) => ({
@@ -619,6 +638,7 @@ function syncActionTimer(room, store) {
       type: 'error',
       message: `${currentPlayer.name} 超时未操作，系统已自动弃牌`,
     });
+    logRoomEvent('action_timeout', { roomCode: room.code, playerId: currentPlayer.id, handId: scheduledHandId });
     publishOutcome(room, store, result.outcome);
   }, room.gameSession.actionTimeoutMs);
 }
@@ -654,6 +674,7 @@ function setDisconnectGraceTimer(room, playerId, store) {
       return;
     }
 
+    logRoomEvent('disconnect_grace_expired', { roomCode: room.code, playerId });
     removePlayerFromRoom(room, playerId, store);
   }, room.gameSession.disconnectGraceMs);
 
@@ -687,6 +708,15 @@ function clearRoomTimers(room) {
     clearTimeout(timer);
   }
   room.gameSession.disconnectTimers.clear();
+}
+
+function logRoomEvent(event, details) {
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    scope: 'poker-room',
+    event,
+    ...details,
+  }));
 }
 
 module.exports = {
