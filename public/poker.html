@@ -18,7 +18,8 @@
   --allin: #e74c3c;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; overflow: hidden; }
+html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; }
+body { overflow: hidden; }
 
 /* CARD STYLES */
 .card {
@@ -34,7 +35,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .card-back { display: inline-block; width: 38px; height: 54px; border-radius: 5px; background: var(--card-back); box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 
 /* LOBBY */
-.screen { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+.screen {
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 100vh; min-height: 100dvh;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+}
 .screen.active { display: flex; }
 .logo { font-size: 28px; font-weight: 900; color: var(--gold); margin-bottom: 30px; letter-spacing: 2px; }
 .btn { background: var(--gold); color: #111; border: none; border-radius: 12px; padding: 14px 28px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 300px; margin: 8px auto; display: block; transition: transform 0.1s, opacity 0.1s; }
@@ -48,8 +53,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .room-code { font-size: 48px; font-weight: 900; color: var(--gold); letter-spacing: 8px; margin: 16px 0; }
 
 /* TABLE */
-#table-screen { flex-direction: column; padding: 0; justify-content: flex-start; }
-.table-top { background: var(--felt); padding: 10px 12px; border-bottom: 2px solid #0a0f1e; }
+#table-screen { flex-direction: column; padding: 0; justify-content: flex-start; min-height: 100vh; min-height: 100dvh; }
+.table-top {
+  background: var(--felt); padding: max(10px, env(safe-area-inset-top)) 12px 10px;
+  border-bottom: 2px solid #0a0f1e; position: sticky; top: 0; z-index: 10;
+}
 .table-info { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #888; }
 .table-info .room-label { font-size: 11px; color: var(--gold); font-weight: bold; }
 .score-link { color: var(--gold); cursor: pointer; text-decoration: underline; }
@@ -70,7 +78,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .pot-display { font-size: 16px; font-weight: 700; color: var(--gold); margin-top: 6px; }
 
 /* PLAYERS */
-.players-area { flex: 1; overflow-y: auto; padding: 8px; }
+.players-area {
+  flex: 1; overflow-y: auto; padding: 8px;
+  padding-bottom: calc(200px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
 .player-seat {
   display: flex; align-items: center; gap: 8px;
   background: rgba(255,255,255,0.03); border-radius: 10px;
@@ -96,9 +108,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 /* ACTION BAR */
 .action-bar {
-  background: #0a0f1e; padding: 12px 12px 20px;
+  background: #0a0f1e;
+  padding: 12px 12px calc(20px + env(safe-area-inset-bottom));
   border-top: 2px solid var(--felt);
   flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  z-index: 12;
 }
 .action-bar.hidden { display: none; }
 .bet-display { text-align: center; margin-bottom: 10px; font-size: 13px; color: #888; }
@@ -147,10 +164,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .player-list-item .is-owner { background: var(--gold); color: #111; font-size: 10px; padding: 2px 6px; border-radius: 8px; font-weight: bold; margin-left: auto; }
 
 /* CHAT */
-.chat-toggle { position: fixed; bottom: 90px; right: 16px; background: var(--felt); border: 2px solid #2c3e50; color: #888; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; cursor: pointer; z-index: 50; display: none; }
+.chat-toggle {
+  position: fixed; bottom: calc(90px + env(safe-area-inset-bottom)); right: 16px;
+  background: var(--felt); border: 2px solid #2c3e50; color: #888; border-radius: 50%;
+  width: 44px; height: 44px; font-size: 20px; cursor: pointer; z-index: 50; display: none;
+}
 .chat-toggle.visible { display: flex; align-items: center; justify-content: center; }
 .chat-panel {
-  position: fixed; bottom: 90px; left: 12px; right: 80px;
+  position: fixed; bottom: calc(90px + env(safe-area-inset-bottom)); left: 12px; right: 80px;
   background: var(--felt); border: 2px solid #2c3e50; border-radius: 16px;
   display: none; flex-direction: column; max-height: 250px; z-index: 50;
 }
@@ -201,6 +222,29 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 @media (max-width: 400px) {
   .card { width: 32px; height: 46px; font-size: 12px; }
   .card-back { width: 32px; height: 46px; }
+  .logo { font-size: 24px; margin-bottom: 20px; }
+  .room-code { font-size: 36px; letter-spacing: 6px; }
+  .control-row { max-width: none; }
+  .table-info { align-items: flex-start; gap: 8px; flex-direction: column; }
+  .score-link { align-self: flex-end; }
+  .players-area { padding: 8px 8px calc(210px + env(safe-area-inset-bottom)); }
+  .your-hand { position: sticky; bottom: calc(116px + env(safe-area-inset-bottom)); z-index: 11; }
+  .player-seat { align-items: flex-start; flex-wrap: wrap; }
+  .player-hand { width: 100%; margin-left: 44px; }
+  .action-bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 8px 8px calc(14px + env(safe-area-inset-bottom));
+  }
+  .action-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .action-btn:last-child { grid-column: 1 / -1; }
+  .chat-panel { left: 8px; right: 64px; bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .chat-toggle { right: 10px; bottom: calc(80px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 340px) {
+  .btn, .input { max-width: none; }
+  .action-row { grid-template-columns: 1fr; }
+  .bet-input-row { flex-direction: column; }
 }
 </style>
 </head>
@@ -213,10 +257,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <div id="lobby-screen" class="screen active">
   <div class="logo">🃏 德州扑克</div>
   <input id="name-input" class="input" placeholder="你的名字" maxlength="20" />
-  <button class="btn" onclick="createRoom()">创建房间</button>
+  <button id="create-room-btn" class="btn">创建房间</button>
   <div class="label">已有房间？</div>
   <input id="join-code-input" class="input" placeholder="输入房间码" maxlength="4" style="text-transform:uppercase" />
-  <button class="btn btn-secondary" onclick="joinRoom()">加入房间</button>
+  <button id="join-room-btn" class="btn btn-secondary">加入房间</button>
+  <div class="session-status" id="lobby-session-status">连接服务器中...</div>
 </div>
 
 <!-- WAITING ROOM SCREEN -->
@@ -230,13 +275,13 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
     <div id="player-list" class="player-list"></div>
   </div>
   <div class="control-row">
-    <button id="wait-sit-in" class="mini-btn" onclick="setParticipation('sit_in')">Sit In</button>
-    <button id="wait-sit-out" class="mini-btn" onclick="setParticipation('sit_out')">Sit Out</button>
-    <button id="wait-spectate" class="mini-btn" onclick="setParticipation('spectate')">Spectate</button>
+    <button id="wait-sit-in" class="mini-btn">Sit In</button>
+    <button id="wait-sit-out" class="mini-btn">Sit Out</button>
+    <button id="wait-spectate" class="mini-btn">Spectate</button>
   </div>
   <div class="session-status" id="session-status">连接中...</div>
-  <button id="start-btn" class="btn" onclick="startGame()" disabled>等待至少2人后开始</button>
-  <button class="btn btn-danger" style="max-width:200px;margin-top:8px" onclick="leaveRoom()">离开房间</button>
+  <button id="start-btn" class="btn" disabled>等待至少2人后开始</button>
+  <button id="leave-room-btn" class="btn btn-danger" style="max-width:200px;margin-top:8px">离开房间</button>
 </div>
 
 <!-- TABLE SCREEN -->
@@ -248,12 +293,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
         <span id="round-display" class="phase-badge"></span>
         <span id="phase-display" class="phase-badge"></span>
       </div>
-      <div class="score-link" onclick="showScoreboard()">🏆 积分榜</div>
+      <div id="score-link" class="score-link">🏆 积分榜</div>
     </div>
     <div class="control-row" style="max-width:none;margin-top:10px">
-      <button id="table-sit-in" class="mini-btn" onclick="setParticipation('sit_in')">Sit In</button>
-      <button id="table-sit-out" class="mini-btn" onclick="setParticipation('sit_out')">Sit Out</button>
-      <button id="table-spectate" class="mini-btn" onclick="setParticipation('spectate')">Spectate</button>
+      <button id="table-sit-in" class="mini-btn">Sit In</button>
+      <button id="table-sit-out" class="mini-btn">Sit Out</button>
+      <button id="table-spectate" class="mini-btn">Spectate</button>
     </div>
     <div class="session-status" id="table-session-status">连接中...</div>
   </div>
@@ -279,20 +324,20 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <input type="number" class="bet-input" id="bet-input" placeholder="加注金额" min="0" />
     </div>
     <div class="action-row">
-      <button class="action-btn btn-check" id="btn-check" onclick="doAction('check')">过牌</button>
-      <button class="action-btn btn-call" id="btn-call" onclick="doAction('call')">跟注 0</button>
-      <button class="action-btn btn-fold" onclick="doAction('fold')">弃牌</button>
-      <button class="action-btn btn-raise" onclick="doAction('raise')">加注</button>
-      <button class="action-btn btn-allin" onclick="doAction('allin')">All-in</button>
+      <button class="action-btn btn-check" id="btn-check">过牌</button>
+      <button class="action-btn btn-call" id="btn-call">跟注 0</button>
+      <button class="action-btn btn-fold" id="btn-fold">弃牌</button>
+      <button class="action-btn btn-raise" id="btn-raise">加注</button>
+      <button class="action-btn btn-allin" id="btn-allin">All-in</button>
     </div>
   </div>
 </div>
 
 <!-- SCOREBOARD OVERLAY -->
-<div id="scoreboard-overlay" class="scoreboard-overlay" onclick="hideScoreboard()">
+<div id="scoreboard-overlay" class="scoreboard-overlay">
   <div class="scoreboard-title">🏆 积分榜</div>
   <div class="score-table" id="score-table" onclick="event.stopPropagation()"></div>
-  <button class="close-btn" onclick="hideScoreboard()">关闭</button>
+  <button id="close-scoreboard-btn" class="close-btn">关闭</button>
 </div>
 
 <!-- RESULT FLASH -->
@@ -300,16 +345,16 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   <div class="result-title" id="result-title">赢家！</div>
   <div class="result-hand" id="result-hand"></div>
   <div class="result-winners" id="result-winners"></div>
-  <button class="result-close" onclick="closeResultFlash()">下一局</button>
+  <button id="result-close-btn" class="result-close">下一局</button>
 </div>
 
 <!-- CHAT PANEL -->
-<button id="chat-toggle" class="chat-toggle" onclick="toggleChat()">💬</button>
+<button id="chat-toggle" class="chat-toggle">💬</button>
 <div id="chat-panel" class="chat-panel">
   <div class="chat-msgs" id="chat-msgs"></div>
   <div class="chat-input-row">
-    <input class="chat-input" id="chat-input" placeholder="说点什么..." maxlength="200" onkeydown="if(event.key==='Enter')sendChat()" />
-    <button class="chat-send" onclick="sendChat()">发</button>
+    <input class="chat-input" id="chat-input" placeholder="说点什么..." maxlength="200" />
+    <button id="chat-send-btn" class="chat-send">发</button>
   </div>
 </div>
 
@@ -322,6 +367,7 @@ let currentPhase = 'waiting';
 let gameState = null;
 let isMyTurn = false;
 const SESSION_KEY = 'poker-session';
+const pendingMessages = [];
 let socketState = 'connecting';
 let isRestoringSession = false;
 
@@ -329,10 +375,13 @@ let isRestoringSession = false;
 // WEBSOCKET
 // ============================================================
 function connect() {
+  socketState = 'connecting';
+  updateSessionStatus();
   ws = new WebSocket(WS_URL);
   ws.onopen = () => {
     socketState = 'connected';
     console.log('Connected');
+    flushPendingMessages();
     const session = loadSession();
     if (session?.playerId && session?.roomCode) {
       isRestoringSession = true;
@@ -358,10 +407,26 @@ function connect() {
 }
 
 function send(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+    return true;
+  }
+
+  if (socketState === 'connecting') {
+    pendingMessages.push(msg);
+    updateSessionStatus();
+    return false;
+  }
+
+  showNotif('连接尚未恢复，请稍后重试', 'error');
+  return false;
 }
 
-connect();
+function flushPendingMessages() {
+  while (pendingMessages.length && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(pendingMessages.shift()));
+  }
+}
 
 // ============================================================
 // MESSAGE HANDLING
@@ -466,6 +531,7 @@ function leaveRoom() {
   send({ type: 'leave_room' });
   myRoomCode = null;
   myPlayerId = null;
+  pendingMessages.length = 0;
   clearSession();
   updateSessionStatus();
   showScreen('lobby');
@@ -505,6 +571,7 @@ function updateWaitingRoom(room) {
   const me = room.players.find(p => p.id === myPlayerId);
   updateParticipationButtons(me);
   updateSessionStatus();
+  showScreen('waiting');
 }
 
 // ============================================================
@@ -813,6 +880,8 @@ function updateParticipationButtons(me) {
 function updateSessionStatus(me) {
   const statusText = isRestoringSession
     ? '正在恢复会话...'
+    : socketState === 'connecting'
+      ? '连接服务器中...'
     : socketState === 'reconnecting'
       ? '连接中断，正在重连...'
       : me?.connectionState === 'disconnected'
@@ -823,13 +892,82 @@ function updateSessionStatus(me) {
 
   const waiting = document.getElementById('session-status');
   const table = document.getElementById('table-session-status');
+  const lobby = document.getElementById('lobby-session-status');
+  const createButton = document.getElementById('create-room-btn');
+  const joinButton = document.getElementById('join-room-btn');
+  if (createButton) createButton.disabled = socketState !== 'connected';
+  if (joinButton) joinButton.disabled = socketState !== 'connected';
+  if (lobby) lobby.textContent = statusText;
   if (waiting) waiting.textContent = statusText;
   if (table) table.textContent = statusText;
 }
 
+Object.assign(window, {
+  closeResultFlash,
+  createRoom,
+  doAction,
+  hideScoreboard,
+  joinRoom,
+  leaveRoom,
+  sendChat,
+  setParticipation,
+  showScoreboard,
+  startGame,
+  toggleChat,
+  __pokerDebug: {
+    getState: () => ({
+      currentPhase,
+      isMyTurn,
+      isRestoringSession,
+      myPlayerId,
+      myRoomCode,
+      pendingMessages: pendingMessages.length,
+      socketState,
+    }),
+    renderTableState: (state) => renderTable(state),
+    renderWaitingRoom: (room) => updateWaitingRoom(room),
+    setSessionState: (next) => {
+      if (next.playerId !== undefined) myPlayerId = next.playerId;
+      if (next.roomCode !== undefined) myRoomCode = next.roomCode;
+      if (next.socketState !== undefined) socketState = next.socketState;
+      if (next.isRestoringSession !== undefined) isRestoringSession = next.isRestoringSession;
+      updateSessionStatus();
+    },
+  },
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('name-input').focus();
+  document.getElementById('create-room-btn').addEventListener('click', createRoom);
+  document.getElementById('join-room-btn').addEventListener('click', joinRoom);
   document.getElementById('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') createRoom(); });
   document.getElementById('join-code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+  document.getElementById('leave-room-btn').addEventListener('click', leaveRoom);
+  document.getElementById('start-btn').addEventListener('click', startGame);
+  document.getElementById('wait-sit-in').addEventListener('click', () => setParticipation('sit_in'));
+  document.getElementById('wait-sit-out').addEventListener('click', () => setParticipation('sit_out'));
+  document.getElementById('wait-spectate').addEventListener('click', () => setParticipation('spectate'));
+  document.getElementById('table-sit-in').addEventListener('click', () => setParticipation('sit_in'));
+  document.getElementById('table-sit-out').addEventListener('click', () => setParticipation('sit_out'));
+  document.getElementById('table-spectate').addEventListener('click', () => setParticipation('spectate'));
+  document.getElementById('btn-check').addEventListener('click', () => doAction('check'));
+  document.getElementById('btn-call').addEventListener('click', () => doAction('call'));
+  document.getElementById('btn-fold').addEventListener('click', () => doAction('fold'));
+  document.getElementById('btn-raise').addEventListener('click', () => doAction('raise'));
+  document.getElementById('btn-allin').addEventListener('click', () => doAction('allin'));
+  document.getElementById('score-link').addEventListener('click', showScoreboard);
+  document.getElementById('scoreboard-overlay').addEventListener('click', hideScoreboard);
+  document.getElementById('close-scoreboard-btn').addEventListener('click', hideScoreboard);
+  document.getElementById('result-close-btn').addEventListener('click', closeResultFlash);
+  document.getElementById('chat-toggle').addEventListener('click', toggleChat);
+  document.getElementById('chat-send-btn').addEventListener('click', sendChat);
+  document.getElementById('chat-input').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') sendChat();
+  });
+  document.getElementById('score-table').addEventListener('click', (event) => event.stopPropagation());
   updateSessionStatus();
+  connect();
 });
+</script>
+</body>
+</html>
