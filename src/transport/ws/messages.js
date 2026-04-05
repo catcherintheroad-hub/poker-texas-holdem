@@ -19,6 +19,8 @@ function publicPlayer(player, room) {
     seatIndex: player.seatIndex,
     chips: player.chips,
     score: room.scores[player.id] || player.totalScore || 0,
+    connectionState: player.connectionState,
+    isSittingOut: player.isSittingOut,
   };
 }
 
@@ -44,6 +46,8 @@ function serializePlayerForViewer(player, room, viewerId) {
     hand: isViewer ? player.holeCards.map(cardToString) : (isSeatedInHand ? ['?', '?'] : null),
     chips: player.chips,
     score: room.scores[player.id] || player.totalScore || 0,
+    connectionState: player.connectionState,
+    isSittingOut: player.isSittingOut,
     isFolded: player.hasFolded,
     isAllIn: player.isAllIn,
     isDealer: room.hand.buttonSeatIndex === player.seatIndex,

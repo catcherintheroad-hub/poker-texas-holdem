@@ -375,6 +375,12 @@ function handleMessage(msg) {
       if (msg.newOwnerId === myPlayerId) showNotif('你已成为房主');
       break;
 
+    case 'room_updated':
+      if (msg.room) {
+        updateWaitingRoom(msg.room);
+      }
+      break;
+
     case 'game_state':
       currentPhase = msg.phase;
       gameState = msg;

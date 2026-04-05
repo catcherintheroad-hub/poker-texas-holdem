@@ -456,7 +456,9 @@ function getActionablePlayers(room) {
 }
 
 function getHandParticipants(room) {
-  return sortPlayersBySeat(room.players).filter((player) => player.chips > 0 && player.connectionState === 'connected');
+  return sortPlayersBySeat(room.players).filter(
+    (player) => player.chips > 0 && player.connectionState === 'connected' && !player.isSittingOut,
+  );
 }
 
 function getRemainingPlayers(room) {
