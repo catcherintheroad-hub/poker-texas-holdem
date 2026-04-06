@@ -892,10 +892,18 @@ body {
     display: none;
   }
   .your-hand {
-    bottom: 8px;
-    padding: 8px 10px;
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--action-bar-height, 0px) + 12px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    padding: 8px 12px;
     border-radius: 18px;
+    z-index: 17;
   }
+  .your-hand-label { color: rgba(255,255,255,0.64); }
+  .your-cards { gap: 8px; }
   .your-cards .card,
   .your-cards .card-back {
     width: 38px;
@@ -1483,6 +1491,7 @@ function renderTable(state) {
 
   if (handPhase === 'waiting') {
     actionBar.classList.add('hidden');
+    updateActionBarHeight();
     return;
   }
   actionBar.classList.remove('hidden');
@@ -1521,6 +1530,7 @@ function renderTable(state) {
   syncTimerStatus(state.timers || {});
   runTableAnimations(previousSnapshot, nextSnapshot, players, handPhase);
   previousTableSnapshot = nextSnapshot;
+  updateActionBarHeight();
 }
 
 function makeCard(cardStr) {
@@ -1867,6 +1877,14 @@ function setActionButtonsDisabled(disabled) {
   });
 }
 
+function updateActionBarHeight() {
+  const actionBar = document.getElementById('action-bar');
+  const height = actionBar && !actionBar.classList.contains('hidden')
+    ? `${Math.ceil(actionBar.getBoundingClientRect().height)}px`
+    : '0px';
+  document.documentElement.style.setProperty('--action-bar-height', height);
+}
+
 function renderSidePotStrip(sidePots = []) {
   const container = document.getElementById('side-pot-strip');
   if (!sidePots.length) {
@@ -2152,6 +2170,7 @@ Object.assign(window, {
 
 let resizeRenderTimer = null;
 window.addEventListener('resize', () => {
+  updateActionBarHeight();
   if (!gameState || !document.getElementById('table-screen')?.classList.contains('active')) {
     return;
   }
@@ -2200,6 +2219,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('history-panel').addEventListener('click', (event) => event.stopPropagation());
   document.getElementById('score-table').addEventListener('click', (event) => event.stopPropagation());
+  updateActionBarHeight();
   updateSessionStatus();
   connect();
 });

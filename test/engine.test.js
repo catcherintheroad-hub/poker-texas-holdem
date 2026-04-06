@@ -128,6 +128,21 @@ test('short all-in increases the bet without reopening raising to prior actors',
   assert.match(result.error, /未重新打开加注权限/);
 });
 
+test('heads-up all-in does not skip the opponent response', () => {
+  const room = createTestRoom(['a', 'b']);
+
+  initializeHand(room);
+
+  const actor = actingPlayer(room);
+  const result = applyAction(room, actor, 'allin', 0);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome.type, 'state_only');
+  assert.equal(room.phase, 'preflop');
+  assert.equal(room.hand.seats.actingSeatIndex, 1);
+  assert.deepEqual(room.hand.betting.pendingSeatIndexes, [1]);
+});
+
 test('river showdown resolves side pots across multiple winners', () => {
   const room = createTestRoom(['a', 'b', 'c']);
   const [a, b, c] = room.players;

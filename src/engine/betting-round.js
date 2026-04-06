@@ -234,7 +234,7 @@ function getNextActingSeat(room, fromSeatIndex) {
 }
 
 function isBettingRoundComplete(room) {
-  return room.hand.betting.pendingSeatIndexes.length === 0 || getActionablePlayers(room).length <= 1;
+  return room.hand.betting.pendingSeatIndexes.length === 0;
 }
 
 function getActionablePlayers(room) {
