@@ -2981,26 +2981,17 @@ function syncTableMenuState(forceOpen = null) {
     return;
   }
 
-  const mobileMenuMode = window.matchMedia('(orientation: landscape) and (max-height: 760px)').matches;
-  const isOpen = forceOpen ?? (!mobileMenuMode || tableMenuPinnedOpen);
+  const isOpen = forceOpen ?? tableMenuPinnedOpen;
   nav.classList.toggle('open', isOpen);
   menuBtn.setAttribute('aria-expanded', String(isOpen));
 }
 
 function toggleTableMenu() {
-  const mobileMenuMode = window.matchMedia('(orientation: landscape) and (max-height: 760px)').matches;
-  if (!mobileMenuMode) {
-    return;
-  }
   tableMenuPinnedOpen = !tableMenuPinnedOpen;
   syncTableMenuState();
 }
 
 function closeTableMenu() {
-  const mobileMenuMode = window.matchMedia('(orientation: landscape) and (max-height: 760px)').matches;
-  if (!mobileMenuMode) {
-    return;
-  }
   tableMenuPinnedOpen = false;
   syncTableMenuState();
 }
