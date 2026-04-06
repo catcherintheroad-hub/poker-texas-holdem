@@ -14,12 +14,16 @@ function sendJson(socket, payload) {
 }
 
 function publicPlayer(player, room) {
+  const sessionTotals = getPlayerSessionTotals(player);
   return {
     id: player.id,
     name: player.name,
     seatIndex: player.seatIndex,
     chips: player.chips,
-    score: room.scores[player.id] || player.totalScore || 0,
+    score: sessionTotals.profitLoss,
+    totalBuyIn: sessionTotals.totalBuyIn,
+    profitLoss: sessionTotals.profitLoss,
+    buyInHistory: player.buyInHistory || [],
     connectionState: player.connectionState,
     isSittingOut: player.isSittingOut,
   };
@@ -47,7 +51,9 @@ function serializePlayerForViewer(player, room, viewerId) {
     seatIndex: player.seatIndex,
     hand: isViewer ? player.holeCards.map(cardToString) : (isSeatedInHand ? ['?', '?'] : null),
     chips: player.chips,
-    score: room.scores[player.id] || player.totalScore || 0,
+    score: getPlayerSessionTotals(player).profitLoss,
+    totalBuyIn: getPlayerSessionTotals(player).totalBuyIn,
+    profitLoss: getPlayerSessionTotals(player).profitLoss,
     connectionState: player.connectionState,
     isSittingOut: player.isSittingOut,
     isFolded: player.hasFolded,
@@ -142,9 +148,21 @@ function buildScoreboard(room) {
       id: player.id,
       name: player.name,
       chips: player.chips,
-      score: room.scores[player.id] || player.totalScore || 0,
+      totalBuyIn: getPlayerSessionTotals(player).totalBuyIn,
+      score: getPlayerSessionTotals(player).profitLoss,
+      profitLoss: getPlayerSessionTotals(player).profitLoss,
+      buyInCount: Array.isArray(player.buyInHistory) ? player.buyInHistory.length : 0,
+      buyInHistory: player.buyInHistory || [],
     }))
-    .sort((left, right) => right.score - left.score || right.chips - left.chips);
+    .sort((left, right) => right.profitLoss - left.profitLoss || right.chips - left.chips);
+}
+
+function getPlayerSessionTotals(player) {
+  const totalBuyIn = Number(player.totalBuyIn || 0);
+  return {
+    totalBuyIn,
+    profitLoss: Number(player.chips || 0) - totalBuyIn,
+  };
 }
 
 module.exports = {

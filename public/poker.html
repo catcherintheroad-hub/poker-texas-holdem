@@ -63,6 +63,23 @@ body {
 }
 .screen.active { display: flex; }
 .logo { font-size: 28px; font-weight: 900; color: var(--gold); margin-bottom: 30px; letter-spacing: 2px; }
+.lobby-card {
+  width: min(100%, 340px);
+  background: rgba(12, 16, 23, 0.82);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 18px 44px rgba(0,0,0,0.24);
+}
+.lobby-card + .lobby-card {
+  margin-top: 14px;
+}
+.lobby-card-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
 .btn { background: var(--gold); color: #111; border: none; border-radius: 12px; padding: 14px 28px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 300px; margin: 8px auto; display: block; transition: transform 0.1s, opacity 0.1s; }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -153,6 +170,43 @@ body {
 .mini-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(232, 199, 115, 0.08); }
 .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .status-muted { color: #8fa0b5; }
+.rebuy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 12px;
+}
+.rebuy-input {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 13px;
+  text-align: center;
+  outline: none;
+}
+.rebuy-input:focus {
+  border-color: var(--gold);
+}
+.rebuy-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, #f7d671, #c89d35);
+  color: #111;
+  font-weight: 800;
+  cursor: pointer;
+}
+.rebuy-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8fa0b5;
+  text-align: center;
+}
 
 /* TABLE STAGE */
 .table-layout {
@@ -589,7 +643,7 @@ body {
 }
 .scoreboard-overlay.active { display: flex; }
 .scoreboard-title { font-size: 22px; font-weight: 900; color: var(--gold); margin-bottom: 20px; }
-.score-table { width: 100%; max-width: 360px; background: var(--felt); border-radius: 16px; overflow: hidden; }
+.score-table { width: 100%; max-width: 460px; background: var(--felt); border-radius: 16px; overflow: hidden; }
 .history-panel { width: 100%; max-width: 420px; background: var(--felt); border-radius: 16px; overflow: hidden; max-height: 70vh; overflow-y: auto; }
 .history-section { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .history-section:last-child { border-bottom: none; }
@@ -599,14 +653,15 @@ body {
 .history-title { font-size: 14px; font-weight: 700; color: var(--text); }
 .history-meta { margin-top: 4px; font-size: 12px; color: #8fa0b5; }
 .history-empty { font-size: 13px; color: #8fa0b5; }
-.score-row { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.score-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .score-row:last-child { border-bottom: none; }
 .score-rank { width: 30px; font-size: 18px; font-weight: 900; color: var(--gold); }
 .score-rank.gold { color: #f39c12; }
 .score-rank.silver { color: #bdc3c7; }
 .score-rank.bronze { color: #cd6133; }
 .score-name { flex: 1; font-size: 15px; }
-.score-pts { font-size: 15px; font-weight: bold; color: var(--gold); }
+.score-meta { font-size: 12px; color: #d7dfcf; margin-top: 4px; }
+.score-pts { font-size: 15px; font-weight: bold; color: var(--gold); text-align: right; }
 .close-btn { margin-top: 20px; background: var(--felt); border: 2px solid var(--gold); color: var(--gold); border-radius: 12px; padding: 12px 32px; font-size: 15px; font-weight: 700; cursor: pointer; }
 
 /* WAITING ROOM */
@@ -1325,11 +1380,17 @@ body {
 <!-- LOBBY SCREEN -->
 <div id="lobby-screen" class="screen active">
   <div class="logo">🃏 德州扑克</div>
-  <input id="name-input" class="input" placeholder="你的名字" maxlength="20" />
-  <button id="create-room-btn" class="btn">创建房间</button>
-  <div class="label">已有房间？</div>
-  <input id="join-code-input" class="input" placeholder="输入房间码" maxlength="4" style="text-transform:uppercase" />
-  <button id="join-room-btn" class="btn btn-secondary">加入房间</button>
+  <div class="lobby-card">
+    <div class="lobby-card-title">创建房间</div>
+    <input id="name-input" class="input" placeholder="你的名字" maxlength="20" />
+    <button id="create-room-btn" class="btn">创建房间</button>
+  </div>
+  <div class="lobby-card">
+    <div class="lobby-card-title">通过房间码加入</div>
+    <input id="join-name-input" class="input" placeholder="加入时显示的名字" maxlength="20" />
+    <input id="join-code-input" class="input" placeholder="输入房间码" maxlength="4" style="text-transform:uppercase" />
+    <button id="join-room-btn" class="btn btn-secondary">加入房间</button>
+  </div>
   <div class="session-status" id="lobby-session-status">连接服务器中...</div>
 </div>
 
@@ -1348,6 +1409,11 @@ body {
     <button id="wait-sit-out" class="mini-btn">Sit Out</button>
     <button id="wait-spectate" class="mini-btn">Spectate</button>
   </div>
+  <div class="rebuy-row">
+    <input id="wait-rebuy-input" class="rebuy-input" type="number" min="10" step="10" placeholder="补码金额" />
+    <button id="wait-rebuy-btn" class="rebuy-btn">补码</button>
+  </div>
+  <div class="rebuy-hint" id="wait-rebuy-hint">输光后可在这里补码继续玩</div>
   <div class="session-status" id="session-status">连接中...</div>
   <button id="start-btn" class="btn" disabled>等待至少2人后开始</button>
   <button id="leave-room-btn" class="btn btn-danger" style="max-width:200px;margin-top:8px">离开房间</button>
@@ -1376,6 +1442,11 @@ body {
             <button id="table-sit-out" class="mini-btn">Sit Out</button>
             <button id="table-spectate" class="mini-btn">Spectate</button>
           </div>
+          <div class="rebuy-row">
+            <input id="table-rebuy-input" class="rebuy-input" type="number" min="10" step="10" placeholder="补码金额" />
+            <button id="table-rebuy-btn" class="rebuy-btn">补码</button>
+          </div>
+          <div class="rebuy-hint" id="table-rebuy-hint">破产后补码会自动在下一手重新坐下</div>
           <div class="session-status" id="table-session-status">连接中...</div>
           <div class="timer-status" id="table-timer-status"></div>
         </div>
@@ -1581,6 +1652,9 @@ function handleMessage(msg) {
         currentPhase = msg.gameState.phase;
         gameState = msg.gameState;
         renderTable(msg.gameState);
+        if (msg.joinedMidHand) {
+          showNotif('已加入房间，本手先旁观，下一手即可参与');
+        }
       } else {
         showScreen('waiting');
         document.getElementById('display-room-code').textContent = msg.roomCode;
@@ -1604,28 +1678,30 @@ function handleMessage(msg) {
       break;
 
     case 'player_joined':
-      updateWaitingRoom({ players: msg.players, phase: 'waiting' });
+      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores }, { stayOnCurrentScreen: true });
       showNotif(msg.player.name + ' 加入了房间');
       break;
 
     case 'player_left':
-      updateWaitingRoom({ players: msg.players, phase: 'waiting' });
+      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores }, { stayOnCurrentScreen: true });
       if (msg.newOwnerId === myPlayerId) showNotif('你已成为房主');
       break;
 
     case 'room_updated':
       if (msg.room) {
-        updateWaitingRoom(msg.room);
+        updateWaitingRoom(msg.room, { stayOnCurrentScreen: currentPhase !== 'waiting' || !!gameState });
       }
       break;
 
     case 'session_paused':
       if (msg.room) {
-        updateWaitingRoom(msg.room);
+        updateWaitingRoom(msg.room, { stayOnCurrentScreen: true });
       }
       currentPhase = 'waiting';
-      showScreen('waiting');
-      showNotif('玩家不足，牌局已暂停，等待继续');
+      if (!document.getElementById('table-screen').classList.contains('active')) {
+        showScreen('waiting');
+      }
+      showNotif('玩家不足，等待补码或新玩家加入');
       break;
 
     case 'game_state':
@@ -1666,6 +1742,10 @@ function handleMessage(msg) {
     case 'action_result':
       handleActionResult(msg);
       break;
+
+    case 'rebuy_result':
+      showNotif(`补码成功 +${msg.amount}`);
+      break;
   }
 }
 
@@ -1673,16 +1753,26 @@ function handleMessage(msg) {
 // LOBBY ACTIONS
 // ============================================================
 function createRoom() {
-  const name = getPlayerName();
+  const name = getPlayerName('create');
   const bb = 10; // default big blind
   send({ type: 'create_room', playerName: name, bigBlind: bb, maxPlayers: 10 });
 }
 
 function joinRoom() {
-  const name = getPlayerName();
+  const name = getPlayerName('join');
   const code = document.getElementById('join-code-input').value.trim().toUpperCase();
   if (!code) { showNotif('请输入房间码', 'error'); return; }
   send({ type: 'join_room', roomCode: code, playerName: name });
+}
+
+function rebuy(source) {
+  const input = document.getElementById(source === 'table' ? 'table-rebuy-input' : 'wait-rebuy-input');
+  const rawValue = parseInt(input?.value || '0', 10);
+  const amount = rawValue > 0 ? rawValue : 1000;
+  send({ type: 'rebuy', amount });
+  if (input) {
+    input.value = amount;
+  }
 }
 
 function startGame() {
@@ -1702,10 +1792,11 @@ function leaveRoom() {
 // ============================================================
 // WAITING ROOM
 // ============================================================
-function updateWaitingRoom(room) {
+function updateWaitingRoom(room, options = {}) {
   const list = document.getElementById('player-list');
   list.innerHTML = '';
-  for (const p of room.players) {
+  const players = room.players || [];
+  for (const p of players) {
     const div = document.createElement('div');
     div.className = 'player-list-item';
     const statusBits = [];
@@ -1720,20 +1811,24 @@ function updateWaitingRoom(room) {
     `;
     list.appendChild(div);
   }
-  document.getElementById('player-count-display').textContent = `${room.players.length} 名玩家`;
+  const activeCount = players.filter((player) => player.chips > 0 && !player.isSittingOut && player.connectionState === 'connected').length;
+  document.getElementById('player-count-display').textContent = `${players.length} 名玩家，${activeCount} 人可参与下一手`;
   const startBtn = document.getElementById('start-btn');
-  if (room.players.length >= 2) {
+  if ((room.phase === 'waiting') && activeCount >= 2) {
     startBtn.disabled = false;
     startBtn.textContent = '开始游戏';
   } else {
     startBtn.disabled = true;
-    startBtn.textContent = '等待至少2人后开始';
+    startBtn.textContent = activeCount >= 2 ? '等待本局结束后继续' : '等待至少2名可参与玩家';
   }
   document.getElementById('table-room-code').textContent = myRoomCode || '';
-  const me = room.players.find(p => p.id === myPlayerId);
+  const me = players.find(p => p.id === myPlayerId);
   updateParticipationButtons(me);
+  updateRebuyControls(me);
   updateSessionStatus();
-  showScreen('waiting');
+  if (!options.stayOnCurrentScreen) {
+    showScreen('waiting');
+  }
 }
 
 // ============================================================
@@ -1859,6 +1954,7 @@ function renderTable(state) {
     setActionButtonsDisabled(false);
   }
   updateParticipationButtons(myP);
+  updateRebuyControls(myP);
   updateSessionStatus(myP);
   const yourHandArea = document.getElementById('your-hand-area');
   const myCards = document.getElementById('my-cards');
@@ -2011,10 +2107,14 @@ function showScoreboard() {
     const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
     const row = document.createElement('div');
     row.className = 'score-row';
+    const profitLossLabel = s.profitLoss > 0 ? `+${s.profitLoss}` : `${s.profitLoss}`;
     row.innerHTML = `
       <div class="score-rank ${rankClass}">${i + 1}</div>
-      <div class="score-name">${s.name}${s.id === myPlayerId ? ' (你)' : ''}</div>
-      <div class="score-pts">${s.score} 分</div>
+      <div>
+        <div class="score-name">${s.name}${s.id === myPlayerId ? ' (你)' : ''}</div>
+        <div class="score-meta">总买入 ${s.totalBuyIn} · 当前筹码 ${s.chips} · ${s.buyInCount || 0} 次买入</div>
+      </div>
+      <div class="score-pts">${profitLossLabel}</div>
     `;
     table.appendChild(row);
   });
@@ -2081,6 +2181,9 @@ function showResultFlash(msg) {
   sidePots.innerHTML = (msg.sidePots || []).length
     ? msg.sidePots.map((pot, index) => `<div class="result-pot-chip">${index === 0 ? '主池' : `边池 ${index}`} · ${pot.amount}</div>`).join('')
     : `<div class="result-pot-chip">总底池 ${msg.pot || 0}</div>`;
+  if (msg.waitingForPlayers) {
+    sidePots.insertAdjacentHTML('beforeend', '<div class="result-pot-chip">等待补码或新玩家加入后继续</div>');
+  }
   startNextHandCountdown(msg.nextHandStartsAt, msg.restartDelayMs);
   el.classList.add('active');
   animatePotToWinners(winners);
@@ -2161,6 +2264,10 @@ function startNextHandCountdown(nextHandStartsAt, restartDelayMs) {
   }
 
   const target = document.getElementById('result-countdown');
+  if (!nextHandStartsAt && !restartDelayMs) {
+    target.textContent = '牌桌已暂停，等待补码或其他玩家输入房间码加入';
+    return;
+  }
   const deadline = nextHandStartsAt || (Date.now() + (restartDelayMs || 0));
   const render = () => {
     const remaining = Math.max(0, deadline - Date.now());
@@ -2514,10 +2621,11 @@ function saveSession(session) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
 
-function getPlayerName() {
-  const input = document.getElementById('name-input');
+function getPlayerName(source = 'create') {
+  const input = document.getElementById(source === 'join' ? 'join-name-input' : 'name-input');
   const name = input?.value.trim() || loadPlayerName() || 'Player';
   savePlayerName(name);
+  syncNameInputs(name);
   return name;
 }
 
@@ -2539,6 +2647,13 @@ function loadSession() {
 
 function clearSession() {
   localStorage.removeItem(SESSION_KEY);
+}
+
+function syncNameInputs(value) {
+  const createInput = document.getElementById('name-input');
+  const joinInput = document.getElementById('join-name-input');
+  if (createInput && createInput.value !== value) createInput.value = value;
+  if (joinInput && joinInput.value !== value) joinInput.value = value;
 }
 
 function updateParticipationButtons(me) {
@@ -2570,6 +2685,26 @@ function updateParticipationButtons(me) {
   });
 }
 
+function updateRebuyControls(me) {
+  const waitInput = document.getElementById('wait-rebuy-input');
+  const tableInput = document.getElementById('table-rebuy-input');
+  const waitHint = document.getElementById('wait-rebuy-hint');
+  const tableHint = document.getElementById('table-rebuy-hint');
+  const defaultAmount = Math.max(10, gameState?.bigBlind || 10) * 100;
+  [waitInput, tableInput].forEach((input) => {
+    if (!input) return;
+    if (!input.value) {
+      input.value = defaultAmount;
+    }
+  });
+  if (!me) {
+    return;
+  }
+  const busted = me.chips <= 0;
+  if (waitHint) waitHint.textContent = busted ? '你已输光，补码后会自动参与下一手' : '可随时补码，系统会记录每次金额';
+  if (tableHint) tableHint.textContent = busted ? '你已输光，补码后会自动参与下一手' : '可随时补码，系统会记录每次金额';
+}
+
 function updateSessionStatus(me) {
   const statusText = isRestoringSession
     ? '正在恢复会话...'
@@ -2588,8 +2723,12 @@ function updateSessionStatus(me) {
   const lobby = document.getElementById('lobby-session-status');
   const createButton = document.getElementById('create-room-btn');
   const joinButton = document.getElementById('join-room-btn');
+  const waitRebuyButton = document.getElementById('wait-rebuy-btn');
+  const tableRebuyButton = document.getElementById('table-rebuy-btn');
   if (createButton) createButton.disabled = socketState !== 'connected';
   if (joinButton) joinButton.disabled = socketState !== 'connected';
+  if (waitRebuyButton) waitRebuyButton.disabled = socketState !== 'connected' || !myRoomCode;
+  if (tableRebuyButton) tableRebuyButton.disabled = socketState !== 'connected' || !myRoomCode;
   if (lobby) lobby.textContent = statusText;
   if (waiting) waiting.textContent = statusText;
   if (table) table.textContent = statusText;
@@ -2642,23 +2781,32 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('DOMContentLoaded', () => {
   const nameInput = document.getElementById('name-input');
+  const joinNameInput = document.getElementById('join-name-input');
   const savedName = loadPlayerName();
   if (savedName) {
-    nameInput.value = savedName;
+    syncNameInputs(savedName);
   }
   nameInput.focus();
   nameInput.addEventListener('input', (event) => {
     savePlayerName(event.target.value.trim());
+    syncNameInputs(event.target.value.trim());
+  });
+  joinNameInput.addEventListener('input', (event) => {
+    savePlayerName(event.target.value.trim());
+    syncNameInputs(event.target.value.trim());
   });
   document.getElementById('create-room-btn').addEventListener('click', createRoom);
   document.getElementById('join-room-btn').addEventListener('click', joinRoom);
   document.getElementById('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') createRoom(); });
+  document.getElementById('join-name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
   document.getElementById('join-code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
   document.getElementById('leave-room-btn').addEventListener('click', leaveRoom);
   document.getElementById('start-btn').addEventListener('click', startGame);
   document.getElementById('wait-sit-in').addEventListener('click', () => setParticipation('sit_in'));
   document.getElementById('wait-sit-out').addEventListener('click', () => setParticipation('sit_out'));
   document.getElementById('wait-spectate').addEventListener('click', () => setParticipation('spectate'));
+  document.getElementById('wait-rebuy-btn').addEventListener('click', () => rebuy('waiting'));
+  document.getElementById('table-rebuy-btn').addEventListener('click', () => rebuy('table'));
   document.getElementById('table-sit-in').addEventListener('click', () => setParticipation('sit_in'));
   document.getElementById('table-sit-out').addEventListener('click', () => setParticipation('sit_out'));
   document.getElementById('table-spectate').addEventListener('click', () => setParticipation('spectate'));

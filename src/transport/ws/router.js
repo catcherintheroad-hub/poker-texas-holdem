@@ -73,6 +73,9 @@ function routeMessage({ context, message, socket, store }) {
     case 'spectate':
       handleParticipationChange({ context, store, mode: 'spectate' });
       return;
+    case 'rebuy':
+      handleRebuy({ context, message, socket, store });
+      return;
     case 'action':
       handleAction({ context, message, socket, store });
       return;
@@ -140,11 +143,6 @@ function handleJoinRoom({ context, message, socket, store }) {
     return;
   }
 
-  if (room.phase !== 'waiting' || room.gameSession.active) {
-    sendJson(socket, { type: 'error', message: '当前牌局进行中，暂不支持中途加入' });
-    return;
-  }
-
   if (room.players.length >= room.maxPlayers) {
     sendJson(socket, { type: 'error', message: '房间已满' });
     return;
@@ -161,6 +159,11 @@ function handleJoinRoom({ context, message, socket, store }) {
     name: normalizePlayerName(message.playerName),
     seatIndex,
   });
+  const joinedMidHand = room.phase !== 'waiting';
+  if (joinedMidHand) {
+    player.isSittingOut = true;
+    player.status = 'spectating';
+  }
 
   room.players.push(player);
   room.updatedAt = Date.now();
@@ -173,14 +176,23 @@ function handleJoinRoom({ context, message, socket, store }) {
     playerId: context.playerId,
     player: { id: player.id, name: player.name, seatIndex: player.seatIndex, chips: player.chips },
     room: serializeRoomLobby(room),
+    joinedMidHand,
+    gameState: room.phase === 'waiting' ? null : serializeGameState(room, player.id),
   });
 
+  const lobby = serializeRoomLobby(room);
   broadcastRoom(room, store, {
     type: 'player_joined',
     player: { id: player.id, name: player.name, seatIndex: player.seatIndex, chips: player.chips },
-    players: serializeRoomLobby(room).players,
-    scores: serializeRoomLobby(room).scores,
+    players: lobby.players,
+    scores: lobby.scores,
+    joinedMidHand,
   });
+  if (room.phase !== 'waiting') {
+    broadcastGameState(room, store);
+  } else {
+    maybeResumePausedSession(room, store);
+  }
 }
 
 function handleResumeSession({ context, message, socket, store }) {
@@ -374,11 +386,16 @@ function handleParticipationChange({ context, store, mode }) {
   }
 
   if (mode === 'sit_in') {
+    if (player.chips <= 0) {
+      sendJson(store.sockets.get(player.id), { type: 'error', message: '筹码已用尽，请先补码' });
+      return;
+    }
     player.isSittingOut = false;
     player.status = player.chips > 0 ? 'active' : player.status;
     room.updatedAt = Date.now();
     logRoomEvent('player_sit_in', { roomCode: room.code, playerId: player.id });
     broadcastRoom(room, store, { type: 'room_updated', room: serializeRoomLobby(room) });
+    maybeResumePausedSession(room, store);
     if (room.phase !== 'waiting') {
       broadcastGameState(room, store);
       syncActionTimer(room, store);
@@ -408,6 +425,73 @@ function handleParticipationChange({ context, store, mode }) {
   if (room.phase !== 'waiting') {
     broadcastGameState(room, store);
     syncActionTimer(room, store);
+  }
+}
+
+function handleRebuy({ context, message, socket, store }) {
+  const room = getRoomForContext(context, store);
+  if (!room) {
+    sendJson(socket, { type: 'error', message: '房间不存在' });
+    return;
+  }
+
+  const player = room.players.find((entry) => entry.id === context.playerId);
+  if (!player) {
+    sendJson(socket, { type: 'error', message: '玩家不存在' });
+    return;
+  }
+
+  const amount = clampNumber(
+    message.amount,
+    room.blinds.big,
+    DEFAULTS.startingChips * 20,
+    room.settings.startingChips,
+  );
+
+  if (room.phase !== 'waiting' && player.holeCards.length > 0) {
+    sendJson(socket, { type: 'error', message: '本手进行中，当前不能补码' });
+    return;
+  }
+
+  player.chips += amount;
+  player.totalBuyIn = (player.totalBuyIn || 0) + amount;
+  player.buyInHistory = player.buyInHistory || [];
+  player.buyInHistory.push({
+    amount,
+    kind: 'rebuy',
+    ts: Date.now(),
+  });
+  player.isSittingOut = false;
+  if (player.connectionState === 'connected') {
+    player.status = 'active';
+  }
+  room.updatedAt = Date.now();
+
+  appendRoomEvent(room, {
+    kind: 'player_rebuy',
+    playerId: player.id,
+    playerName: player.name,
+    amount,
+  });
+  logRoomEvent('player_rebuy', { roomCode: room.code, playerId: player.id, amount });
+
+  const lobby = serializeRoomLobby(room);
+  sendJson(socket, {
+    type: 'rebuy_result',
+    status: 'accepted',
+    amount,
+    player: lobby.players.find((entry) => entry.id === player.id) || null,
+    scores: lobby.scores,
+  });
+  broadcastRoom(room, store, {
+    type: 'room_updated',
+    room: lobby,
+  });
+  if (room.phase !== 'waiting') {
+    broadcastGameState(room, store);
+    syncActionTimer(room, store);
+  } else {
+    maybeResumePausedSession(room, store);
   }
 }
 
@@ -579,8 +663,9 @@ function publishOutcome(room, store, outcome) {
         communityCards: outcome.communityCards.map(cardToString),
         scores: serializeRoomLobby(room).scores,
         sidePots: outcome.sidePots || [],
-        restartDelayMs: room.gameSession.restartDelayMs,
-        nextHandStartsAt: Date.now() + room.gameSession.restartDelayMs,
+        restartDelayMs: canSeatNextHand(room) ? room.gameSession.restartDelayMs : null,
+        nextHandStartsAt: canSeatNextHand(room) ? Date.now() + room.gameSession.restartDelayMs : null,
+        waitingForPlayers: !canSeatNextHand(room),
       });
       broadcastGameState(room, store);
       scheduleNextHand(room, store);
@@ -630,10 +715,7 @@ function scheduleNextHand(room, store) {
     return;
   }
 
-  const eligiblePlayers = room.players.filter(
-    (player) => player.chips > 0 && player.connectionState === 'connected' && !player.isSittingOut,
-  );
-  if (eligiblePlayers.length < DEFAULTS.minPlayers) {
+  if (!canSeatNextHand(room)) {
     pauseSessionForPlayers(room, store);
     return;
   }
@@ -645,10 +727,7 @@ function scheduleNextHand(room, store) {
       return;
     }
 
-    const readyPlayers = room.players.filter(
-      (player) => player.chips > 0 && player.connectionState === 'connected' && !player.isSittingOut,
-    );
-    if (readyPlayers.length < DEFAULTS.minPlayers) {
+    if (!canSeatNextHand(room)) {
       pauseSessionForPlayers(room, store);
       return;
     }
@@ -669,10 +748,10 @@ function scheduleNextHand(room, store) {
 }
 
 function pauseSessionForPlayers(room, store) {
-  room.gameSession.active = false;
   clearNextHandTimer(room);
   clearActionTimer(room);
   room.phase = 'waiting';
+  room.gameSession.pausedReason = 'waiting_for_players';
   room.updatedAt = Date.now();
 
   const lobby = serializeRoomLobby(room);
@@ -681,6 +760,23 @@ function pauseSessionForPlayers(room, store) {
     reason: 'waiting_for_players',
     room: lobby,
     scores: lobby.scores,
+  });
+}
+
+function maybeResumePausedSession(room, store) {
+  if (!room.gameSession.active || room.phase !== 'waiting' || room.gameSession.nextHandTimer) {
+    return;
+  }
+
+  if (!canSeatNextHand(room)) {
+    return;
+  }
+
+  room.gameSession.pausedReason = null;
+  scheduleNextHand(room, store);
+  broadcastRoom(room, store, {
+    type: 'room_updated',
+    room: serializeRoomLobby(room),
   });
 }
 
@@ -820,6 +916,12 @@ function clearRoomTimers(room) {
     clearTimeout(timer);
   }
   room.gameSession.disconnectTimers.clear();
+}
+
+function canSeatNextHand(room) {
+  return room.players.filter(
+    (player) => player.chips > 0 && player.connectionState === 'connected' && !player.isSittingOut,
+  ).length >= DEFAULTS.minPlayers;
 }
 
 function logRoomEvent(event, details) {

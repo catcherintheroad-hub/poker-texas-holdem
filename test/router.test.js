@@ -165,7 +165,7 @@ test('router can return recent hand and event history snapshots', () => {
   cleanupHarness(harness, created.roomCode);
 });
 
-test('router rejects joins while an active session is between hands', () => {
+test('router allows joining an active room and seats the new player out until next hand', () => {
   const harness = createHarness();
   const owner = harness.connectSocket();
   const guest = harness.connectSocket();
@@ -176,15 +176,14 @@ test('router rejects joins while an active session is between hands', () => {
   guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
   owner.sendMessage({ type: 'start_game' });
 
-  const room = harness.store.rooms.get(created.roomCode);
-  room.phase = 'waiting';
-  room.gameSession.active = true;
-
   lateJoiner.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Late' });
-  const rejected = lateJoiner.findMessage('error');
+  const joined = lateJoiner.findMessage('room_joined');
+  const state = lateJoiner.findMessage('game_state');
 
-  assert.ok(rejected);
-  assert.match(rejected.message, /暂不支持中途加入/);
+  assert.ok(joined);
+  assert.equal(joined.joinedMidHand, true);
+  assert.ok(state);
+  assert.equal(state.players.find((player) => player.name === 'Late').isSittingOut, true);
 
   cleanupHarness(harness, created.roomCode);
 });
@@ -243,7 +242,7 @@ test('serialized game state includes live side-pot breakdown for all-in scenario
   cleanupHarness(harness, created.roomCode);
 });
 
-test('hand_result payload includes restart timing metadata for result pause', () => {
+test('hand_result payload signals when the table is waiting for rebuys or joiners', () => {
   const harness = createHarness();
   const owner = harness.connectSocket();
   const guest = harness.connectSocket();
@@ -255,7 +254,6 @@ test('hand_result payload includes restart timing metadata for result pause', ()
 
   const room = harness.store.rooms.get(created.roomCode);
   room.gameSession.restartDelayMs = 10000;
-  const start = Date.now();
 
   owner.sent.length = 0;
   guest.sent.length = 0;
@@ -264,10 +262,9 @@ test('hand_result payload includes restart timing metadata for result pause', ()
   const result = owner.findMessage('hand_result');
 
   assert.ok(result);
-  assert.equal(result.restartDelayMs, 10000);
-  assert.equal(typeof result.nextHandStartsAt, 'number');
-  assert.ok(result.nextHandStartsAt >= start + 9000);
-  assert.ok(result.nextHandStartsAt <= Date.now() + 11000);
+  assert.equal(result.restartDelayMs, null);
+  assert.equal(result.nextHandStartsAt, null);
+  assert.equal(result.waitingForPlayers, true);
 
   cleanupHarness(harness, created.roomCode);
 });
@@ -296,11 +293,87 @@ test('session pauses instead of ending the room when too few players remain for 
 
   assert.ok(paused);
   assert.equal(gameOver, null);
-  assert.equal(room.gameSession.active, false);
+  assert.equal(room.gameSession.active, true);
   assert.equal(room.phase, 'waiting');
+  assert.equal(room.gameSession.pausedReason, 'waiting_for_players');
 
   cleanupHarness(harness, created.roomCode);
 });
+
+test('rebuy records buy-in history and resumes a paused session', async () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  const joined = guest.findMessage('room_joined');
+  owner.sendMessage({ type: 'start_game' });
+
+  const room = harness.store.rooms.get(created.roomCode);
+  room.gameSession.restartDelayMs = 20;
+  guest.sent.length = 0;
+
+  const guestPlayer = room.players.find((player) => player.id === joined.playerId);
+  guestPlayer.chips = 0;
+  guestPlayer.isSittingOut = true;
+
+  pauseSessionForTest(room, harness.store);
+  guest.sendMessage({ type: 'rebuy', amount: 500 });
+  const rebuyResult = guest.findMessage('rebuy_result');
+
+  assert.ok(rebuyResult);
+  assert.equal(rebuyResult.status, 'accepted');
+  assert.equal(guestPlayer.chips, 500);
+  assert.equal(guestPlayer.totalBuyIn, 1500);
+  assert.equal(guestPlayer.buyInHistory.at(-1).amount, 500);
+  assert.equal(guestPlayer.isSittingOut, false);
+
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const resumedState = owner.findMessage('game_state');
+  assert.ok(resumedState);
+  assert.equal(room.phase, 'preflop');
+
+  cleanupHarness(harness, created.roomCode);
+});
+
+test('scoreboard serializes total buy-ins and running profit/loss', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  const room = harness.store.rooms.get(created.roomCode);
+  const player = room.players[0];
+
+  player.chips = 1350;
+  player.totalBuyIn = 1600;
+  player.buyInHistory.push({ amount: 600, kind: 'rebuy', ts: Date.now() });
+
+  const lobby = serializeGameState(room, player.id);
+  const scoreboardEntry = lobby.scores.find((entry) => entry.id === player.id);
+
+  assert.equal(scoreboardEntry.totalBuyIn, 1600);
+  assert.equal(scoreboardEntry.profitLoss, -250);
+  assert.equal(scoreboardEntry.score, -250);
+  assert.equal(scoreboardEntry.buyInCount, 2);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
+function pauseSessionForTest(room, store) {
+  room.phase = 'waiting';
+  room.gameSession.pausedReason = 'waiting_for_players';
+  room.gameSession.active = true;
+  if (room.gameSession.nextHandTimer) {
+    clearTimeout(room.gameSession.nextHandTimer);
+    room.gameSession.nextHandTimer = null;
+  }
+  if (store && room.players.length) {
+    room.updatedAt = Date.now();
+  }
+}
 
 function createHarness() {
   const wss = new EventEmitter();

@@ -41,6 +41,7 @@ function createRoom({ code, ownerId, bigBlind, maxPlayers }) {
       actionHandId: null,
       actionDeadlineAt: null,
       disconnectTimers: new Map(),
+      pausedReason: null,
     },
   };
 }
