@@ -1,9 +1,14 @@
 'use strict';
 
-const { compareEvaluations, evaluateBestHand } = require('./hand-evaluator');
+const { getEvaluator } = require('./evaluator');
 const { prepareNextHandOrWaiting } = require('./hand-reset');
 
 function resolveUncontestedWin(room, winner) {
+  const handMeta = {
+    handId: room.hand.id,
+    handNumber: room.hand.handNumber,
+    phase: room.phase,
+  };
   const prize = room.hand.betting.pot;
   const communityCards = [...room.hand.board];
   const winnerSnapshot = {
@@ -17,6 +22,7 @@ function resolveUncontestedWin(room, winner) {
 
   const outcome = {
     type: 'hand_result',
+    handMeta,
     winners: [winnerSnapshot],
     prize,
     pot: room.hand.betting.pot,
@@ -29,11 +35,17 @@ function resolveUncontestedWin(room, winner) {
 }
 
 function resolveShowdown(room) {
+  const handMeta = {
+    handId: room.hand.id,
+    handNumber: room.hand.handNumber,
+    phase: room.phase,
+  };
+  const evaluator = getEvaluator();
   const contenders = getRemainingPlayers(room);
   const evaluations = new Map();
 
   for (const contender of contenders) {
-    evaluations.set(contender.id, evaluateBestHand([...contender.holeCards, ...room.hand.board]));
+    evaluations.set(contender.id, evaluator.evaluate([...contender.holeCards, ...room.hand.board]));
   }
 
   const sidePots = buildSidePots(room.players);
@@ -45,7 +57,7 @@ function resolveShowdown(room) {
       continue;
     }
 
-    const winners = selectPotWinners(eligibleContenders, evaluations);
+    const winners = selectPotWinners(eligibleContenders, evaluations, evaluator);
     distributePot(room, winners, sidePot.amount, payoutByPlayerId);
   }
 
@@ -61,6 +73,7 @@ function resolveShowdown(room) {
 
   const outcome = {
     type: 'hand_result',
+    handMeta,
     winners: payoutWinners,
     prize: room.hand.betting.pot,
     pot: room.hand.betting.pot,
@@ -103,7 +116,7 @@ function buildSidePots(players) {
   return pots;
 }
 
-function selectPotWinners(players, evaluations) {
+function selectPotWinners(players, evaluations, evaluator) {
   let bestEvaluation = null;
   let winners = [];
 
@@ -115,7 +128,7 @@ function selectPotWinners(players, evaluations) {
       continue;
     }
 
-    const comparison = compareEvaluations(evaluation, bestEvaluation);
+    const comparison = evaluator.compare(evaluation, bestEvaluation);
     if (comparison > 0) {
       bestEvaluation = evaluation;
       winners = [player];

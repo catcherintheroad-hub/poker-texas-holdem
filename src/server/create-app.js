@@ -26,10 +26,29 @@ function createApp(store) {
       phase: room.phase,
       ownerId: room.ownerId,
       buttonSeatIndex: room.buttonSeatIndex,
-      handId: room.hand.id,
-      actingSeatIndex: room.hand.actingSeatIndex,
-      currentBet: room.hand.currentBet,
-      pot: room.hand.pot,
+      hand: {
+        id: room.hand.id,
+        phase: room.hand.phase,
+        handNumber: room.hand.handNumber,
+        board: room.hand.board,
+        seats: {
+          buttonSeatIndex: room.hand.seats.buttonSeatIndex,
+          smallBlindSeatIndex: room.hand.seats.smallBlindSeatIndex,
+          bigBlindSeatIndex: room.hand.seats.bigBlindSeatIndex,
+          actingSeatIndex: room.hand.seats.actingSeatIndex,
+        },
+        betting: {
+          currentBet: room.hand.betting.currentBet,
+          pot: room.hand.betting.pot,
+          minRaise: room.hand.betting.minRaise,
+          lastRaiseSize: room.hand.betting.lastRaiseSize,
+          pendingSeatIndexes: room.hand.betting.pendingSeatIndexes,
+          raiseRightsSeatIndexes: room.hand.betting.raiseRightsSeatIndexes,
+        },
+        showdown: {
+          seatIndexes: room.hand.showdown.seatIndexes,
+        },
+      },
       players: room.players.map((player) => ({
         id: player.id,
         name: player.name,

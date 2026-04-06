@@ -38,6 +38,7 @@ function serializeRoomLobby(room) {
 function serializePlayerForViewer(player, room, viewerId) {
   const isViewer = player.id === viewerId;
   const isSeatedInHand = player.holeCards.length > 0;
+  const seatState = room.hand.seats;
 
   return {
     id: player.id,
@@ -50,32 +51,57 @@ function serializePlayerForViewer(player, room, viewerId) {
     isSittingOut: player.isSittingOut,
     isFolded: player.hasFolded,
     isAllIn: player.isAllIn,
-    isDealer: room.hand.buttonSeatIndex === player.seatIndex,
-    isSmallBlind: room.hand.smallBlindSeatIndex === player.seatIndex,
-    isBigBlind: room.hand.bigBlindSeatIndex === player.seatIndex,
+    isDealer: seatState.buttonSeatIndex === player.seatIndex,
+    isSmallBlind: seatState.smallBlindSeatIndex === player.seatIndex,
+    isBigBlind: seatState.bigBlindSeatIndex === player.seatIndex,
     currentBet: player.committedChips,
-    isCurrentTurn: room.hand.actingSeatIndex === player.seatIndex,
+    isCurrentTurn: seatState.actingSeatIndex === player.seatIndex,
     lastAction: player.lastAction,
   };
 }
 
 function serializeGameState(room, viewerId) {
-  const actingPlayer = room.players.find((player) => player.seatIndex === room.hand.actingSeatIndex) || null;
+  const seatState = room.hand.seats;
+  const bettingState = room.hand.betting;
+  const actingPlayer = room.players.find((player) => player.seatIndex === seatState.actingSeatIndex) || null;
 
   return {
     type: 'game_state',
     phase: room.phase,
     communityCards: room.hand.board.map(cardToString),
-    pot: room.hand.pot,
-    currentBet: room.hand.currentBet,
-    dealerIndex: room.hand.buttonSeatIndex,
+    pot: bettingState.pot,
+    currentBet: bettingState.currentBet,
+    dealerIndex: seatState.buttonSeatIndex,
     players: sortPlayersBySeat(room.players).map((player) => serializePlayerForViewer(player, room, viewerId)),
     currentPlayerId: actingPlayer ? actingPlayer.id : null,
-    minRaise: room.hand.minRaise,
+    minRaise: bettingState.minRaise,
     smallBlind: room.blinds.small,
     bigBlind: room.blinds.big,
     roundNumber: room.hand.handNumber,
     scores: buildScoreboard(room),
+    hand: {
+      id: room.hand.id,
+      number: room.hand.handNumber,
+      phase: room.hand.phase,
+      board: room.hand.board.map(cardToString),
+      seats: {
+        buttonSeatIndex: seatState.buttonSeatIndex,
+        smallBlindSeatIndex: seatState.smallBlindSeatIndex,
+        bigBlindSeatIndex: seatState.bigBlindSeatIndex,
+        actingSeatIndex: seatState.actingSeatIndex,
+      },
+      betting: {
+        pot: bettingState.pot,
+        currentBet: bettingState.currentBet,
+        minRaise: bettingState.minRaise,
+        lastRaiseSize: bettingState.lastRaiseSize,
+        pendingSeatIndexes: [...bettingState.pendingSeatIndexes],
+        raiseRightsSeatIndexes: [...bettingState.raiseRightsSeatIndexes],
+      },
+      showdown: {
+        seatIndexes: [...room.hand.showdown.seatIndexes],
+      },
+    },
   };
 }
 

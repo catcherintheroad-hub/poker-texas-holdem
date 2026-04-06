@@ -414,8 +414,8 @@ function removePlayerFromRoom(room, playerId, store) {
     room.ownerId = sortPlayersBySeat(room.players)[0].id;
   }
 
-  if (room.phase !== 'waiting' && room.hand.actingSeatIndex === player.seatIndex) {
-    room.hand.actingSeatIndex = getNextOccupiedSeat(room.players, player.seatIndex, room.maxPlayers);
+  if (room.phase !== 'waiting' && room.hand.seats.actingSeatIndex === player.seatIndex) {
+    room.hand.seats.actingSeatIndex = getNextOccupiedSeat(room.players, player.seatIndex, room.maxPlayers);
   }
 
   broadcastRoom(room, store, {
@@ -485,6 +485,14 @@ function publishOutcome(room, store, outcome) {
     return;
   }
 
+  const handMeta = outcome.handMeta || {};
+  const outcomeEvent = {
+    kind: outcome.type,
+    handId: handMeta.handId || room.hand.id,
+    handNumber: handMeta.handNumber ?? room.hand.handNumber,
+    phase: handMeta.phase || room.phase,
+  };
+
   switch (outcome.type) {
     case 'hand_result':
       logRoomEvent('hand_result', {
@@ -494,6 +502,7 @@ function publishOutcome(room, store, outcome) {
       });
       broadcastRoom(room, store, {
         type: 'hand_result',
+        event: { ...outcomeEvent, kind: 'hand_result' },
         winners: outcome.winners.map((winner) => ({
           id: winner.id,
           name: winner.name,
@@ -515,13 +524,31 @@ function publishOutcome(room, store, outcome) {
       broadcastGameState(room, store);
       broadcastRoom(room, store, {
         type: 'error',
+        event: { ...outcomeEvent, kind: 'showdown_pending' },
         message: '已进入 showdown，牌型比较与分池将在下一分支完成',
       });
       syncActionTimer(room, store);
       return;
     case 'phase_advanced':
+      broadcastRoom(room, store, {
+        type: 'engine_event',
+        event: {
+          ...outcomeEvent,
+          kind: 'phase_advanced',
+          nextPhase: outcome.phase,
+        },
+      });
+      broadcastGameState(room, store);
+      syncActionTimer(room, store);
+      return;
     case 'state_only':
     default:
+      broadcastRoom(room, store, {
+        type: 'engine_event',
+        event: outcome.type === 'state_only'
+          ? { ...outcomeEvent, kind: 'action_applied' }
+          : outcomeEvent,
+      });
       broadcastGameState(room, store);
       syncActionTimer(room, store);
   }
@@ -586,7 +613,7 @@ function syncActionTimer(room, store) {
     return;
   }
 
-  const actingPlayer = room.players.find((player) => player.seatIndex === room.hand.actingSeatIndex) || null;
+  const actingPlayer = room.players.find((player) => player.seatIndex === room.hand.seats.actingSeatIndex) || null;
   if (!actingPlayer || room.phase === 'waiting' || room.phase === 'showdown' || room.phase === 'scoring') {
     clearActionTimer(room);
     return;
@@ -619,7 +646,7 @@ function syncActionTimer(room, store) {
     if (
       !store.rooms.has(room.code) ||
       room.hand.id !== scheduledHandId ||
-      room.hand.actingSeatIndex !== scheduledSeatIndex
+      room.hand.seats.actingSeatIndex !== scheduledSeatIndex
     ) {
       return;
     }
