@@ -88,6 +88,12 @@ function routeMessage({ context, message, socket, store }) {
     case 'leave_room':
       handleLeaveRoom({ context, store });
       return;
+    case 'transfer_owner':
+      handleTransferOwner({ context, message, socket, store });
+      return;
+    case 'disband_room':
+      handleDisbandRoom({ context, socket, store });
+      return;
     default:
       sendJson(socket, { type: 'error', message: '未知消息类型' });
   }
@@ -144,6 +150,11 @@ function handleJoinRoom({ context, message, socket, store }) {
     return;
   }
 
+  if (room.gameSession.finalizedAt) {
+    sendJson(socket, { type: 'error', message: '该房间已结束，请让房主重新创建新房间' });
+    return;
+  }
+
   if (room.players.length >= room.maxPlayers) {
     sendJson(socket, { type: 'error', message: '房间已满' });
     return;
@@ -187,6 +198,7 @@ function handleJoinRoom({ context, message, socket, store }) {
     type: 'player_joined',
     player: { id: player.id, name: player.name, seatIndex: player.seatIndex, chips: player.chips },
     players: lobby.players,
+    ownerId: lobby.ownerId,
     scores: lobby.scores,
     joinedMidHand,
   });
@@ -526,6 +538,72 @@ function handleLeaveRoom({ context, store }) {
   sendJson(socket, {
     type: 'session_left',
     roomCode: room.code,
+  });
+}
+
+function handleTransferOwner({ context, message, socket, store }) {
+  const room = getRoomForContext(context, store);
+  if (!room) {
+    sendJson(socket, { type: 'error', message: '房间不存在' });
+    return;
+  }
+
+  if (room.ownerId !== context.playerId) {
+    sendJson(socket, { type: 'error', message: '只有房主可以转让房主权限' });
+    return;
+  }
+
+  if (room.gameSession.finalizedAt) {
+    sendJson(socket, { type: 'error', message: '牌桌已总结算，不能再转让房主' });
+    return;
+  }
+
+  const nextOwnerId = String(message.nextOwnerId || '').trim();
+  const nextOwner = room.players.find((player) => player.id === nextOwnerId);
+  if (!nextOwner) {
+    sendJson(socket, { type: 'error', message: '目标玩家不存在' });
+    return;
+  }
+
+  if (nextOwner.id === room.ownerId) {
+    sendJson(socket, { type: 'error', message: '该玩家已经是房主' });
+    return;
+  }
+
+  room.ownerId = nextOwner.id;
+  room.updatedAt = Date.now();
+  const lobby = serializeRoomLobby(room);
+  broadcastRoom(room, store, {
+    type: 'room_owner_changed',
+    room: lobby,
+    previousOwnerId: context.playerId,
+    newOwnerId: nextOwner.id,
+  });
+  logRoomEvent('room_owner_changed', { roomCode: room.code, previousOwnerId: context.playerId, newOwnerId: nextOwner.id });
+}
+
+function handleDisbandRoom({ context, socket, store }) {
+  const room = getRoomForContext(context, store);
+  if (!room) {
+    sendJson(socket, { type: 'error', message: '房间不存在' });
+    return;
+  }
+
+  if (room.ownerId !== context.playerId) {
+    sendJson(socket, { type: 'error', message: '只有房主可以解散房间' });
+    return;
+  }
+
+  if (room.gameSession.finalizedAt) {
+    sendJson(socket, { type: 'error', message: '房间已经总结算，无需重复解散' });
+    return;
+  }
+
+  finalizeRoomSession(room, store, 'room_closed');
+  sendJson(socket, {
+    type: 'action_result',
+    status: 'accepted',
+    action: 'disband_room',
   });
 }
 
@@ -990,8 +1068,12 @@ function clearIdleTimer(room) {
 }
 
 function finalizeRoomForIdle(room, store) {
+  finalizeRoomSession(room, store, 'idle_timeout');
+}
+
+function finalizeRoomSession(room, store, reason) {
   room.gameSession.finalizedAt = Date.now();
-  room.gameSession.finalReason = 'idle_timeout';
+  room.gameSession.finalReason = reason;
   room.gameSession.active = false;
   room.phase = 'waiting';
   clearNextHandTimer(room);
@@ -1000,12 +1082,18 @@ function finalizeRoomForIdle(room, store) {
   room.updatedAt = Date.now();
 
   const summary = buildFinalSummary(room);
+  const lobby = serializeRoomLobby(room);
   broadcastRoom(room, store, {
     type: 'session_finalized',
-    reason: 'idle_timeout',
+    reason,
     finalizedAt: room.gameSession.finalizedAt,
     summary,
   });
+  broadcastRoom(room, store, {
+    type: 'room_updated',
+    room: lobby,
+  });
+  logRoomEvent('session_finalized', { roomCode: room.code, reason, finalizedAt: room.gameSession.finalizedAt });
 }
 
 function buildFinalSummary(room) {

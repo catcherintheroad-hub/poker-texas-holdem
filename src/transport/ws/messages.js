@@ -32,6 +32,7 @@ function publicPlayer(player, room) {
 function serializeRoomLobby(room) {
   return {
     code: room.code,
+    ownerId: room.ownerId,
     phase: room.phase,
     bigBlind: room.blinds.big,
     maxPlayers: room.maxPlayers,

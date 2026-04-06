@@ -449,6 +449,62 @@ test('room cannot be left before the one-hour idle settlement triggers', () => {
   cleanupHarness(harness, created.roomCode);
 });
 
+test('owner can transfer room ownership to another connected player', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  const guestPlayerId = guest.findMessage('room_joined').playerId;
+
+  owner.sent.length = 0;
+  guest.sent.length = 0;
+  owner.sendMessage({ type: 'transfer_owner', nextOwnerId: guestPlayerId });
+
+  const ownerChanged = owner.findMessage('room_owner_changed');
+  assert.ok(ownerChanged);
+  assert.equal(ownerChanged.newOwnerId, guestPlayerId);
+  assert.equal(ownerChanged.room.ownerId, guestPlayerId);
+  assert.equal(harness.store.rooms.get(created.roomCode).ownerId, guestPlayerId);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
+test('owner can disband room and everyone receives a final summary', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+
+  owner.sent.length = 0;
+  guest.sent.length = 0;
+  owner.sendMessage({ type: 'disband_room' });
+
+  const finalized = owner.findMessage('session_finalized');
+  const guestFinalized = guest.findMessage('session_finalized');
+  assert.ok(finalized);
+  assert.ok(guestFinalized);
+  assert.equal(finalized.reason, 'room_closed');
+  assert.equal(finalized.summary.scores.length, 2);
+
+  const room = harness.store.rooms.get(created.roomCode);
+  assert.ok(room.gameSession.finalizedAt);
+  assert.equal(room.gameSession.finalReason, 'room_closed');
+
+  const lateJoiner = harness.connectSocket();
+  lateJoiner.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Late' });
+  const rejected = lateJoiner.findMessage('error');
+  assert.ok(rejected);
+  assert.match(rejected.message, /房间已结束|重新创建/);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 test('room broadcasts final settlement after idle timeout and then allows leaving', async () => {
   const harness = createHarness();
   const owner = harness.connectSocket();

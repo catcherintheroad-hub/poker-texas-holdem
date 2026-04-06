@@ -673,6 +673,46 @@ body {
 .player-list-item:last-child { border-bottom: none; }
 .player-list-item .avatar { width: 32px; height: 32px; background: #2c3e50; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 .player-list-item .is-owner { background: var(--gold); color: #111; font-size: 10px; padding: 2px 6px; border-radius: 8px; font-weight: bold; margin-left: auto; }
+.owner-tools {
+  width: 100%;
+  max-width: 360px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
+  display: grid;
+  gap: 10px;
+}
+.owner-tools.hidden {
+  display: none;
+}
+.owner-tools-title {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+}
+.owner-select {
+  width: 100%;
+  background: rgba(8, 12, 20, 0.9);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: white;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+.owner-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.owner-hint {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.4;
+}
 
 /* CHAT */
 .chat-toggle {
@@ -1513,6 +1553,15 @@ body {
     <div id="player-count-display" style="color:#888;font-size:14px;margin-bottom:16px">等待玩家...</div>
     <div id="player-list" class="player-list"></div>
   </div>
+  <div id="waiting-owner-tools" class="owner-tools hidden">
+    <div class="owner-tools-title">房主管理</div>
+    <select id="waiting-owner-select" class="owner-select"></select>
+    <div class="owner-actions">
+      <button id="waiting-transfer-owner-btn" class="btn btn-secondary">转让房主</button>
+      <button id="waiting-disband-room-btn" class="btn btn-danger">解散房间</button>
+    </div>
+    <div class="owner-hint">解散房间会立即弹出总结算榜，并停止新玩家通过房间码加入。</div>
+  </div>
   <div class="control-row">
     <button id="wait-sit-in" class="mini-btn">Sit In</button>
     <button id="wait-sit-out" class="mini-btn">Sit Out</button>
@@ -1556,6 +1605,15 @@ body {
             <button id="table-rebuy-btn" class="rebuy-btn">补码</button>
           </div>
           <div class="rebuy-hint" id="table-rebuy-hint">破产后补码会自动在下一手重新坐下</div>
+          <div id="table-owner-tools" class="owner-tools hidden" style="max-width:none;margin-top:10px">
+            <div class="owner-tools-title">房主管理</div>
+            <select id="table-owner-select" class="owner-select"></select>
+            <div class="owner-actions">
+              <button id="table-transfer-owner-btn" class="btn btn-secondary">转让房主</button>
+              <button id="table-disband-room-btn" class="btn btn-danger">解散房间</button>
+            </div>
+            <div class="owner-hint">解散房间会先弹出总结算榜，大家确认后再离开。</div>
+          </div>
           <div class="session-status" id="table-session-status">连接中...</div>
           <div class="timer-status" id="table-timer-status"></div>
         </div>
@@ -1804,13 +1862,25 @@ function handleMessage(msg) {
       break;
 
     case 'player_joined':
-      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
+      updateWaitingRoom({ players: msg.players, ownerId: msg.ownerId || latestRoomLobby?.ownerId, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
       showNotif(msg.player.name + ' 加入了房间');
       break;
 
     case 'player_left':
-      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
+      updateWaitingRoom({ players: msg.players, ownerId: msg.newOwnerId || latestRoomLobby?.ownerId, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
       if (msg.newOwnerId === myPlayerId) showNotif('你已成为房主');
+      break;
+
+    case 'room_owner_changed':
+      if (msg.room) {
+        updateWaitingRoom(msg.room, { stayOnCurrentScreen: true });
+      }
+      if (msg.newOwnerId === myPlayerId) {
+        showNotif('你现在是房主');
+      } else if (msg.previousOwnerId === myPlayerId) {
+        const nextOwner = msg.room?.players?.find((player) => player.id === msg.newOwnerId);
+        showNotif(`房主已转让给 ${nextOwner?.name || '其他玩家'}`);
+      }
       break;
 
     case 'room_updated':
@@ -1876,6 +1946,7 @@ function handleMessage(msg) {
     case 'session_finalized':
       latestRoomLobby = {
         ...(latestRoomLobby || {}),
+        ownerId: latestRoomLobby?.ownerId,
         session: {
           ...(latestRoomLobby?.session || {}),
           finalizedAt: msg.finalizedAt || Date.now(),
@@ -1884,7 +1955,7 @@ function handleMessage(msg) {
       };
       updateSessionStatus();
       showFinalSummary(msg.summary, msg.reason);
-      showNotif('牌桌因 1 小时无动作，已弹出总结算');
+      showNotif(msg.reason === 'room_closed' ? '房主已解散房间，已弹出总结算' : '牌桌因 1 小时无动作，已弹出总结算');
       break;
 
     case 'chat_message':
@@ -1945,11 +2016,36 @@ function leaveRoom() {
   send({ type: 'leave_room' });
 }
 
+function transferOwner(source) {
+  const select = document.getElementById(source === 'table' ? 'table-owner-select' : 'waiting-owner-select');
+  const nextOwnerId = select?.value;
+  if (!nextOwnerId) {
+    showNotif('请先选择要转让的玩家', 'error');
+    return;
+  }
+  send({ type: 'transfer_owner', nextOwnerId });
+}
+
+function disbandRoom() {
+  if (!window.confirm('解散房间后会立即弹出总结算榜，并阻止新玩家继续加入。确定解散吗？')) {
+    return;
+  }
+  send({ type: 'disband_room' });
+}
+
 // ============================================================
 // WAITING ROOM
 // ============================================================
 function updateWaitingRoom(room, options = {}) {
-  latestRoomLobby = room || latestRoomLobby;
+  latestRoomLobby = {
+    ...(latestRoomLobby || {}),
+    ...(room || {}),
+    session: {
+      ...(latestRoomLobby?.session || {}),
+      ...(room?.session || {}),
+    },
+  };
+  room = latestRoomLobby;
   const list = document.getElementById('player-list');
   list.innerHTML = '';
   const players = room.players || [];
@@ -1964,14 +2060,17 @@ function updateWaitingRoom(room, options = {}) {
       <div style="font-size:15px">${p.name}</div>
       <div style="font-size:12px;color:#888">${p.chips} 筹码</div>
       ${statusBits.length ? `<div class="status-muted">${statusBits.join(' · ')}</div>` : ''}
-      ${p.id === myPlayerId ? '<span class="is-owner">你</span>' : ''}
+      ${p.id === room.ownerId ? `<span class="is-owner">${p.id === myPlayerId ? '房主 · 你' : '房主'}</span>` : (p.id === myPlayerId ? '<span class="is-owner">你</span>' : '')}
     `;
     list.appendChild(div);
   }
   const activeCount = players.filter((player) => player.chips > 0 && !player.isSittingOut && player.connectionState === 'connected').length;
   document.getElementById('player-count-display').textContent = `${players.length} 名玩家，${activeCount} 人可参与下一手`;
   const startBtn = document.getElementById('start-btn');
-  if ((room.phase === 'waiting') && activeCount >= 2) {
+  if (room.ownerId !== myPlayerId) {
+    startBtn.disabled = true;
+    startBtn.textContent = activeCount >= 2 ? '等待房主开始游戏' : '等待至少2名可参与玩家';
+  } else if ((room.phase === 'waiting') && activeCount >= 2) {
     startBtn.disabled = false;
     startBtn.textContent = '开始游戏';
   } else {
@@ -1982,6 +2081,7 @@ function updateWaitingRoom(room, options = {}) {
   const me = players.find(p => p.id === myPlayerId);
   updateParticipationButtons(me);
   updateRebuyControls(me);
+  updateOwnerControls(room);
   if (room?.session?.finalizedAt) {
     showFinalSummary({
       roomCode: myRoomCode,
@@ -2489,6 +2589,8 @@ function showFinalSummary(summary, reason) {
 
   subtitle.textContent = reason === 'idle_timeout'
     ? '牌桌超过 1 小时没有任何动作，已自动总结算'
+    : reason === 'room_closed'
+      ? '房主已解散房间，现展示本桌总结算'
     : '本桌已完成总结算';
   body.innerHTML = scores.map((entry, index) => {
     const profitText = entry.profitLoss > 0 ? `+${entry.profitLoss}` : `${entry.profitLoss}`;
@@ -2512,6 +2614,27 @@ function showFinalSummary(summary, reason) {
 
 function hideFinalSummary() {
   document.getElementById('final-summary-overlay').classList.remove('active');
+}
+
+function updateOwnerControls(room) {
+  const isOwner = room?.ownerId === myPlayerId;
+  const transferrablePlayers = (room?.players || []).filter((player) => player.id !== myPlayerId && player.connectionState === 'connected');
+  for (const prefix of ['waiting', 'table']) {
+    const panel = document.getElementById(`${prefix}-owner-tools`);
+    const select = document.getElementById(`${prefix}-owner-select`);
+    const transferBtn = document.getElementById(`${prefix}-transfer-owner-btn`);
+    const disbandBtn = document.getElementById(`${prefix}-disband-room-btn`);
+    if (!panel || !select || !transferBtn || !disbandBtn) {
+      continue;
+    }
+    panel.classList.toggle('hidden', !isOwner);
+    select.innerHTML = transferrablePlayers.length
+      ? transferrablePlayers.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join('')
+      : '<option value="">暂无可转让玩家</option>';
+    select.disabled = !isOwner || !transferrablePlayers.length || Boolean(room?.session?.finalizedAt);
+    transferBtn.disabled = select.disabled;
+    disbandBtn.disabled = !isOwner || Boolean(room?.session?.finalizedAt);
+  }
 }
 
 function startNextHandCountdown(nextHandStartsAt, restartDelayMs) {
@@ -3107,6 +3230,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('wait-spectate').addEventListener('click', () => setParticipation('spectate'));
   document.getElementById('wait-rebuy-btn').addEventListener('click', () => rebuy('waiting'));
   document.getElementById('table-rebuy-btn').addEventListener('click', () => rebuy('table'));
+  document.getElementById('waiting-transfer-owner-btn').addEventListener('click', () => transferOwner('waiting'));
+  document.getElementById('table-transfer-owner-btn').addEventListener('click', () => transferOwner('table'));
+  document.getElementById('waiting-disband-room-btn').addEventListener('click', disbandRoom);
+  document.getElementById('table-disband-room-btn').addEventListener('click', disbandRoom);
   document.getElementById('table-sit-in').addEventListener('click', () => setParticipation('sit_in'));
   document.getElementById('table-sit-out').addEventListener('click', () => setParticipation('sit_out'));
   document.getElementById('table-spectate').addEventListener('click', () => setParticipation('spectate'));
