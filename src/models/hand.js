@@ -30,38 +30,6 @@ function createHandCore() {
   };
 }
 
-function attachLegacyAliases(hand) {
-  defineAlias(hand, 'buttonSeatIndex', hand.seats, 'buttonSeatIndex');
-  defineAlias(hand, 'smallBlindSeatIndex', hand.seats, 'smallBlindSeatIndex');
-  defineAlias(hand, 'bigBlindSeatIndex', hand.seats, 'bigBlindSeatIndex');
-  defineAlias(hand, 'actingSeatIndex', hand.seats, 'actingSeatIndex');
-
-  defineAlias(hand, 'pot', hand.betting, 'pot');
-  defineAlias(hand, 'currentBet', hand.betting, 'currentBet');
-  defineAlias(hand, 'minRaise', hand.betting, 'minRaise');
-  defineAlias(hand, 'lastRaiseSize', hand.betting, 'lastRaiseSize');
-  defineAlias(hand, 'pendingSeatIndexes', hand.betting, 'pendingSeatIndexes');
-  defineAlias(hand, 'raiseRightsSeatIndexes', hand.betting, 'raiseRightsSeatIndexes');
-
-  defineAlias(hand, 'showdownSeatIndexes', hand.showdown, 'seatIndexes');
-  defineAlias(hand, 'actionLog', hand.log, 'actionLog');
-
-  return hand;
-}
-
-function defineAlias(target, aliasKey, source, sourceKey) {
-  Object.defineProperty(target, aliasKey, {
-    enumerable: true,
-    configurable: true,
-    get() {
-      return source[sourceKey];
-    },
-    set(value) {
-      source[sourceKey] = value;
-    },
-  });
-}
-
 function normalizeHandState(overrides = {}) {
   const next = { ...overrides };
   const normalized = createHandCore();
@@ -104,7 +72,7 @@ function normalizeHandState(overrides = {}) {
     actionLog: cloneArray(next.actionLog ?? next.log?.actionLog ?? normalized.log.actionLog),
   };
 
-  return attachLegacyAliases(normalized);
+  return normalized;
 }
 
 function createEmptyHandState() {

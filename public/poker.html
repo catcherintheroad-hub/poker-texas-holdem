@@ -490,6 +490,10 @@ function handleMessage(msg) {
       renderTable(msg);
       break;
 
+    case 'engine_event':
+      handleEngineEvent(msg.event);
+      break;
+
     case 'hand_result':
       showResultFlash(msg);
       break;
@@ -578,16 +582,24 @@ function updateWaitingRoom(room) {
 // TABLE RENDERING
 // ============================================================
 function renderTable(state) {
+  const hand = state.hand || {};
+  const betting = hand.betting || {};
+  const board = hand.board || state.communityCards || [];
+  const roundNumber = hand.number ?? state.roundNumber;
+  const handPhase = hand.phase || state.phase;
+  const currentBet = betting.currentBet ?? state.currentBet ?? 0;
+  const minRaise = betting.minRaise ?? state.minRaise ?? (state.bigBlind * 2);
+
   showScreen('table');
   document.getElementById('table-room-code').textContent = myRoomCode || '';
-  document.getElementById('round-display').textContent = state.roundNumber ? `第${state.roundNumber}局` : '';
-  document.getElementById('phase-display').textContent = phaseName(state.phase);
+  document.getElementById('round-display').textContent = roundNumber ? `第${roundNumber}局` : '';
+  document.getElementById('phase-display').textContent = phaseName(handPhase);
 
   // Community cards
   const cc = document.getElementById('community-cards');
   cc.innerHTML = '';
   for (let i = 0; i < 5; i++) {
-    const c = state.communityCards[i];
+    const c = board[i];
     if (c && c !== '?') {
       cc.appendChild(makeCard(c));
     } else {
@@ -597,7 +609,7 @@ function renderTable(state) {
     }
   }
 
-  document.getElementById('pot-display').textContent = state.pot;
+  document.getElementById('pot-display').textContent = betting.pot ?? state.pot ?? 0;
 
   // Players
   const area = document.getElementById('players-area');
@@ -664,18 +676,17 @@ function renderTable(state) {
   }
 
   // Action bar
-  isMyTurn = state.currentPlayerId === myPlayerId && state.phase !== 'waiting' && state.phase !== 'showdown' && state.phase !== 'scoring';
+  isMyTurn = state.currentPlayerId === myPlayerId && handPhase !== 'waiting' && handPhase !== 'showdown' && handPhase !== 'scoring';
   const actionBar = document.getElementById('action-bar');
 
-  if (state.phase === 'waiting') {
+  if (handPhase === 'waiting') {
     actionBar.classList.add('hidden');
     return;
   }
   actionBar.classList.remove('hidden');
 
-  const toCall = state.currentBet;
+  const toCall = currentBet;
   const myChips = myP ? myP.chips : 0;
-  const minRaise = state.minRaise || state.bigBlind * 2;
 
   const btnCheck = document.getElementById('btn-check');
   const btnCall = document.getElementById('btn-call');
@@ -778,6 +789,13 @@ function showResultFlash(msg) {
   document.getElementById('result-hand').textContent = winners[0]?.handType || '';
   document.getElementById('result-winners').textContent = winners.map(w => `${w.name} +${w.prize ?? msg.prize}`).join(', ');
   el.classList.add('active');
+}
+
+function handleEngineEvent(event) {
+  if (!event) return;
+  if (event.kind === 'phase_advanced' && event.nextPhase) {
+    showNotif(`已进入${phaseName(event.nextPhase)}`);
+  }
 }
 
 function closeResultFlash() {

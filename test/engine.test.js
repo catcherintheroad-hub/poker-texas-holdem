@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { applyAction, initializeHand } = require('../src/engine/hand-flow');
 const { compareEvaluations, evaluateBestHand } = require('../src/engine/hand-evaluator');
+const { createHandState } = require('../src/models/hand');
 const { createPlayer } = require('../src/models/player');
 const { createRoom } = require('../src/models/room');
 
@@ -39,10 +40,10 @@ test('initializeHand applies heads-up blind and acting-seat rules', () => {
   initializeHand(room);
 
   assert.equal(room.phase, 'preflop');
-  assert.equal(room.hand.buttonSeatIndex, 0);
-  assert.equal(room.hand.smallBlindSeatIndex, 0);
-  assert.equal(room.hand.bigBlindSeatIndex, 1);
-  assert.equal(room.hand.actingSeatIndex, 0);
+  assert.equal(room.hand.seats.buttonSeatIndex, 0);
+  assert.equal(room.hand.seats.smallBlindSeatIndex, 0);
+  assert.equal(room.hand.seats.bigBlindSeatIndex, 1);
+  assert.equal(room.hand.seats.actingSeatIndex, 0);
 });
 
 test('initializeHand skips disconnected players when seating a new hand', () => {
@@ -54,8 +55,8 @@ test('initializeHand skips disconnected players when seating a new hand', () => 
   assert.equal(room.players[0].holeCards.length, 2);
   assert.equal(room.players[1].holeCards.length, 2);
   assert.equal(room.players[2].holeCards.length, 0);
-  assert.equal(room.hand.smallBlindSeatIndex, 0);
-  assert.equal(room.hand.bigBlindSeatIndex, 1);
+  assert.equal(room.hand.seats.smallBlindSeatIndex, 0);
+  assert.equal(room.hand.seats.bigBlindSeatIndex, 1);
 });
 
 test('preflop action sequence advances to flop', () => {
@@ -92,7 +93,7 @@ test('short all-in increases the bet without reopening raising to prior actors',
   actor = actingPlayer(room);
   result = applyAction(room, actor, 'allin', 0);
   assert.equal(result.ok, true);
-  assert.equal(room.hand.currentBet, 45);
+  assert.equal(room.hand.betting.currentBet, 45);
 
   actor = actingPlayer(room);
   result = applyAction(room, actor, 'call', 0);
@@ -109,25 +110,33 @@ test('river showdown resolves side pots across multiple winners', () => {
   const [a, b, c] = room.players;
 
   room.phase = 'river';
-  room.hand = {
+  room.hand = createHandState({
     id: 'river-sidepot',
     phase: 'river',
     deck: [],
     board: [card('K', '♠'), card('K', '♥'), card('2', '♣'), card('3', '♦'), card('4', '♣')],
-    pot: 600,
-    currentBet: 0,
-    minRaise: 10,
-    lastRaiseSize: 10,
-    buttonSeatIndex: 0,
-    smallBlindSeatIndex: 1,
-    bigBlindSeatIndex: 2,
-    actingSeatIndex: 0,
-    pendingSeatIndexes: [0],
-    raiseRightsSeatIndexes: [0],
-    showdownSeatIndexes: [],
+    seats: {
+      buttonSeatIndex: 0,
+      smallBlindSeatIndex: 1,
+      bigBlindSeatIndex: 2,
+      actingSeatIndex: 0,
+    },
+    betting: {
+      pot: 600,
+      currentBet: 0,
+      minRaise: 10,
+      lastRaiseSize: 10,
+      pendingSeatIndexes: [0],
+      raiseRightsSeatIndexes: [0],
+    },
+    showdown: {
+      seatIndexes: [],
+    },
     handNumber: 1,
-    actionLog: [],
-  };
+    log: {
+      actionLog: [],
+    },
+  });
 
   a.holeCards = [card('A', '♠'), card('A', '♥')];
   b.holeCards = [card('Q', '♠'), card('Q', '♥')];
@@ -151,25 +160,33 @@ test('folded players leave dead chips in the pot but cannot win at showdown', ()
   const [a, b, c] = room.players;
 
   room.phase = 'river';
-  room.hand = {
+  room.hand = createHandState({
     id: 'river-folded',
     phase: 'river',
     deck: [],
     board: [card('A', '♣'), card('K', '♣'), card('Q', '♦'), card('7', '♥'), card('2', '♠')],
-    pot: 700,
-    currentBet: 0,
-    minRaise: 10,
-    lastRaiseSize: 10,
-    buttonSeatIndex: 0,
-    smallBlindSeatIndex: 1,
-    bigBlindSeatIndex: 2,
-    actingSeatIndex: 0,
-    pendingSeatIndexes: [0],
-    raiseRightsSeatIndexes: [0],
-    showdownSeatIndexes: [],
+    seats: {
+      buttonSeatIndex: 0,
+      smallBlindSeatIndex: 1,
+      bigBlindSeatIndex: 2,
+      actingSeatIndex: 0,
+    },
+    betting: {
+      pot: 700,
+      currentBet: 0,
+      minRaise: 10,
+      lastRaiseSize: 10,
+      pendingSeatIndexes: [0],
+      raiseRightsSeatIndexes: [0],
+    },
+    showdown: {
+      seatIndexes: [],
+    },
     handNumber: 1,
-    actionLog: [],
-  };
+    log: {
+      actionLog: [],
+    },
+  });
 
   a.holeCards = [card('A', '♠'), card('10', '♠')];
   b.holeCards = [card('K', '♠'), card('10', '♣')];
@@ -204,8 +221,20 @@ function createTestRoom(playerIds) {
 }
 
 function actingPlayer(room) {
-  return room.players.find((player) => player.seatIndex === room.hand.actingSeatIndex);
+  return room.players.find((player) => player.seatIndex === room.hand.seats.actingSeatIndex);
 }
+
+test('betting invariant keeps pot equal to total committed chips', () => {
+  const room = createTestRoom(['a', 'b', 'c']);
+
+  initializeHand(room);
+  applyAction(room, actingPlayer(room), 'call', 0);
+  applyAction(room, actingPlayer(room), 'raise', 40);
+  applyAction(room, actingPlayer(room), 'call', 0);
+
+  const totalCommitted = room.players.reduce((sum, player) => sum + player.totalCommittedChips, 0);
+  assert.equal(room.hand.betting.pot, totalCommitted);
+});
 
 function card(rank, suit) {
   return { rank, suit };

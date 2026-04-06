@@ -26,6 +26,9 @@ test('router can create, join, and start a room', () => {
   assert.ok(gameState);
   assert.equal(gameState.phase, 'preflop');
   assert.equal(gameState.players.length, 2);
+  assert.ok(gameState.hand);
+  assert.equal(typeof gameState.hand.seats.actingSeatIndex, 'number');
+  assert.equal(typeof gameState.hand.betting.currentBet, 'number');
 
   cleanupHarness(harness, created.roomCode);
 });
@@ -89,6 +92,27 @@ test('sit_out in waiting room keeps the player seated but out of the next hand',
   const state = owner.findMessage('game_state');
   const sitterState = state.players.find((player) => player.id === sitterId);
   assert.equal(sitterState.hand, null);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
+test('router emits structured engine events alongside state snapshots', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  owner.sendMessage({ type: 'start_game' });
+
+  owner.sent.length = 0;
+  owner.sendMessage({ type: 'action', action: 'call', amount: 0 });
+
+  const engineEvent = owner.findMessage('engine_event');
+  assert.ok(engineEvent);
+  assert.equal(engineEvent.event.kind, 'action_applied');
+  assert.equal(typeof engineEvent.event.handId, 'string');
 
   cleanupHarness(harness, created.roomCode);
 });
