@@ -1391,7 +1391,10 @@ function renderTable(state) {
 
   // Your hand
   const myP = state.players.find(p => p.id === myPlayerId);
-  if (pendingActionState && state.currentPlayerId !== myPlayerId) {
+  if (pendingActionState?.accepted) {
+    pendingActionState = null;
+    setActionButtonsDisabled(false);
+  } else if (pendingActionState && state.currentPlayerId !== myPlayerId) {
     pendingActionState = null;
     setActionButtonsDisabled(false);
   }
