@@ -74,6 +74,7 @@ function createApp(store) {
         hasActionTimeoutTimer: Boolean(room.gameSession.actionTimeoutTimer),
         disconnectTimerPlayerIds: [...room.gameSession.disconnectTimers.keys()],
       },
+      history: room.history,
     }));
 
     response.json({ rooms, roomCount: rooms.length, generatedAt: Date.now() });

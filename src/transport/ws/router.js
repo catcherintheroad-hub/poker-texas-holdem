@@ -79,6 +79,9 @@ function routeMessage({ context, message, socket, store }) {
     case 'chat':
       handleChat({ context, message, socket, store });
       return;
+    case 'get_hand_history':
+      handleGetHandHistory({ context, socket, store });
+      return;
     case 'leave_room':
       handleLeaveRoom({ context, store });
       return;
@@ -251,7 +254,17 @@ function handleStartGame({ context, socket, store }) {
   room.gameSession.active = true;
   initializeHand(room);
   logRoomEvent('hand_started', { roomCode: room.code, handId: room.hand.id, handNumber: room.hand.handNumber });
+  appendRoomEvent(room, {
+    kind: 'hand_started',
+    handId: room.hand.id,
+    handNumber: room.hand.handNumber,
+    phase: room.phase,
+  });
   broadcastGameState(room, store);
+  broadcastRoom(room, store, {
+    type: 'engine_event',
+    event: room.history.recentEvents[room.history.recentEvents.length - 1],
+  });
   syncActionTimer(room, store);
 }
 
@@ -280,6 +293,15 @@ function handleAction({ context, message, socket, store }) {
     action: message.action,
     amount: message.amount || 0,
     phase: room.phase,
+  });
+  appendRoomEvent(room, {
+    kind: 'player_action_requested',
+    handId: room.hand.id,
+    handNumber: room.hand.handNumber,
+    phase: room.phase,
+    playerId: player.id,
+    action: message.action,
+    amount: message.amount || 0,
   });
   publishOutcome(room, store, result.outcome);
 }
@@ -382,6 +404,22 @@ function handleLeaveRoom({ context, store }) {
 
   removePlayerFromRoom(room, context.playerId, store);
   context.roomCode = null;
+}
+
+function handleGetHandHistory({ context, socket, store }) {
+  const room = getRoomForContext(context, store);
+  if (!room) {
+    sendJson(socket, { type: 'error', message: '房间不存在' });
+    return;
+  }
+
+  sendJson(socket, {
+    type: 'history_snapshot',
+    history: {
+      recentHands: room.history.recentHands,
+      recentEvents: room.history.recentEvents,
+    },
+  });
 }
 
 function handleDisconnect({ context, store }) {
@@ -495,14 +533,25 @@ function publishOutcome(room, store, outcome) {
 
   switch (outcome.type) {
     case 'hand_result':
+      appendCompletedHand(room, outcome, outcomeEvent);
       logRoomEvent('hand_result', {
         roomCode: room.code,
         pot: outcome.pot,
         winners: outcome.winners.map((winner) => winner.id),
       });
+      appendRoomEvent(room, {
+        ...outcomeEvent,
+        kind: 'hand_finished',
+        pot: outcome.pot,
+        winners: outcome.winners.map((winner) => ({
+          id: winner.id,
+          name: winner.name,
+          prize: winner.prize,
+        })),
+      });
       broadcastRoom(room, store, {
         type: 'hand_result',
-        event: { ...outcomeEvent, kind: 'hand_result' },
+        event: room.history.recentEvents[room.history.recentEvents.length - 1],
         winners: outcome.winners.map((winner) => ({
           id: winner.id,
           name: winner.name,
@@ -530,24 +579,27 @@ function publishOutcome(room, store, outcome) {
       syncActionTimer(room, store);
       return;
     case 'phase_advanced':
+      appendRoomEvent(room, {
+        ...outcomeEvent,
+        kind: 'phase_advanced',
+        nextPhase: outcome.phase,
+      });
       broadcastRoom(room, store, {
         type: 'engine_event',
-        event: {
-          ...outcomeEvent,
-          kind: 'phase_advanced',
-          nextPhase: outcome.phase,
-        },
+        event: room.history.recentEvents[room.history.recentEvents.length - 1],
       });
       broadcastGameState(room, store);
       syncActionTimer(room, store);
       return;
     case 'state_only':
     default:
+      appendRoomEvent(room, {
+        ...outcomeEvent,
+        kind: 'action_applied',
+      });
       broadcastRoom(room, store, {
         type: 'engine_event',
-        event: outcome.type === 'state_only'
-          ? { ...outcomeEvent, kind: 'action_applied' }
-          : outcomeEvent,
+        event: room.history.recentEvents[room.history.recentEvents.length - 1],
       });
       broadcastGameState(room, store);
       syncActionTimer(room, store);
@@ -595,6 +647,16 @@ function scheduleNextHand(room, store) {
     }
 
     initializeHand(room);
+    appendRoomEvent(room, {
+      kind: 'hand_started',
+      handId: room.hand.id,
+      handNumber: room.hand.handNumber,
+      phase: room.phase,
+    });
+    broadcastRoom(room, store, {
+      type: 'engine_event',
+      event: room.history.recentEvents[room.history.recentEvents.length - 1],
+    });
     broadcastGameState(room, store);
   }, room.gameSession.restartDelayMs);
 }
@@ -744,6 +806,41 @@ function logRoomEvent(event, details) {
     event,
     ...details,
   }));
+}
+
+function appendRoomEvent(room, event) {
+  room.history.recentEvents.push({
+    ...event,
+    ts: Date.now(),
+  });
+
+  while (room.history.recentEvents.length > room.history.maxEvents) {
+    room.history.recentEvents.shift();
+  }
+}
+
+function appendCompletedHand(room, outcome, event) {
+  room.history.recentHands.push({
+    handId: event.handId,
+    handNumber: event.handNumber,
+    phase: event.phase,
+    pot: outcome.pot,
+    handType: outcome.handType,
+    communityCards: outcome.communityCards.map(cardToString),
+    winners: outcome.winners.map((winner) => ({
+      id: winner.id,
+      name: winner.name,
+      handType: winner.handType,
+      prize: winner.prize,
+      hand: winner.hand.map(cardToString),
+    })),
+    sidePots: outcome.sidePots || [],
+    ts: Date.now(),
+  });
+
+  while (room.history.recentHands.length > room.history.maxHands) {
+    room.history.recentHands.shift();
+  }
 }
 
 module.exports = {

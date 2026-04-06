@@ -20,6 +20,12 @@ function createRoom({ code, ownerId, bigBlind, maxPlayers }) {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     scores: {},
+    history: {
+      recentHands: [],
+      recentEvents: [],
+      maxHands: 12,
+      maxEvents: 100,
+    },
     settings: {
       startingChips: DEFAULTS.startingChips,
     },

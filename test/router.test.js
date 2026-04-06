@@ -117,6 +117,28 @@ test('router emits structured engine events alongside state snapshots', () => {
   cleanupHarness(harness, created.roomCode);
 });
 
+test('router can return recent hand and event history snapshots', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  owner.sendMessage({ type: 'start_game' });
+
+  owner.sent.length = 0;
+  owner.sendMessage({ type: 'get_hand_history' });
+  const history = owner.findMessage('history_snapshot');
+
+  assert.ok(history);
+  assert.ok(Array.isArray(history.history.recentHands));
+  assert.ok(Array.isArray(history.history.recentEvents));
+  assert.equal(history.history.recentEvents.some((event) => event.kind === 'hand_started'), true);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 function createHarness() {
   const wss = new EventEmitter();
   const store = createStore();

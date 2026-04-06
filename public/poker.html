@@ -60,8 +60,10 @@ body { overflow: hidden; }
 }
 .table-info { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #888; }
 .table-info .room-label { font-size: 11px; color: var(--gold); font-weight: bold; }
+.table-links { display: flex; gap: 12px; align-items: center; }
 .score-link { color: var(--gold); cursor: pointer; text-decoration: underline; }
 .session-status { margin-top: 8px; font-size: 12px; color: #8fa0b5; text-align: center; }
+.timer-status { margin-top: 4px; font-size: 12px; color: #d8e0ea; text-align: center; min-height: 16px; }
 .control-row { display: flex; gap: 8px; width: 100%; max-width: 360px; margin-top: 10px; }
 .mini-btn {
   flex: 1; background: #1e2642; color: var(--text); border: 1px solid #2c3e50;
@@ -145,6 +147,15 @@ body { overflow: hidden; }
 .scoreboard-overlay.active { display: flex; }
 .scoreboard-title { font-size: 22px; font-weight: 900; color: var(--gold); margin-bottom: 20px; }
 .score-table { width: 100%; max-width: 360px; background: var(--felt); border-radius: 16px; overflow: hidden; }
+.history-panel { width: 100%; max-width: 420px; background: var(--felt); border-radius: 16px; overflow: hidden; max-height: 70vh; overflow-y: auto; }
+.history-section { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.history-section:last-child { border-bottom: none; }
+.history-heading { font-size: 12px; color: #8fa0b5; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+.history-item { padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05); }
+.history-item:first-child { border-top: none; padding-top: 0; }
+.history-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.history-meta { margin-top: 4px; font-size: 12px; color: #8fa0b5; }
+.history-empty { font-size: 13px; color: #8fa0b5; }
 .score-row { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .score-row:last-child { border-bottom: none; }
 .score-rank { width: 30px; font-size: 18px; font-weight: 900; color: var(--gold); }
@@ -226,7 +237,7 @@ body { overflow: hidden; }
   .room-code { font-size: 36px; letter-spacing: 6px; }
   .control-row { max-width: none; }
   .table-info { align-items: flex-start; gap: 8px; flex-direction: column; }
-  .score-link { align-self: flex-end; }
+  .table-links { align-self: flex-end; flex-wrap: wrap; justify-content: flex-end; }
   .players-area { padding: 8px 8px calc(210px + env(safe-area-inset-bottom)); }
   .your-hand { position: sticky; bottom: calc(116px + env(safe-area-inset-bottom)); z-index: 11; }
   .player-seat { align-items: flex-start; flex-wrap: wrap; }
@@ -293,7 +304,10 @@ body { overflow: hidden; }
         <span id="round-display" class="phase-badge"></span>
         <span id="phase-display" class="phase-badge"></span>
       </div>
-      <div id="score-link" class="score-link">🏆 积分榜</div>
+      <div class="table-links">
+        <div id="history-link" class="score-link">🕘 最近手牌</div>
+        <div id="score-link" class="score-link">🏆 积分榜</div>
+      </div>
     </div>
     <div class="control-row" style="max-width:none;margin-top:10px">
       <button id="table-sit-in" class="mini-btn">Sit In</button>
@@ -301,6 +315,7 @@ body { overflow: hidden; }
       <button id="table-spectate" class="mini-btn">Spectate</button>
     </div>
     <div class="session-status" id="table-session-status">连接中...</div>
+    <div class="timer-status" id="table-timer-status"></div>
   </div>
 
   <div class="community-area">
@@ -340,6 +355,13 @@ body { overflow: hidden; }
   <button id="close-scoreboard-btn" class="close-btn">关闭</button>
 </div>
 
+<!-- HISTORY OVERLAY -->
+<div id="history-overlay" class="scoreboard-overlay">
+  <div class="scoreboard-title">🕘 最近手牌</div>
+  <div class="history-panel" id="history-panel"></div>
+  <button id="close-history-btn" class="close-btn">关闭</button>
+</div>
+
 <!-- RESULT FLASH -->
 <div id="result-flash" class="result-flash">
   <div class="result-title" id="result-title">赢家！</div>
@@ -370,6 +392,8 @@ const SESSION_KEY = 'poker-session';
 const pendingMessages = [];
 let socketState = 'connecting';
 let isRestoringSession = false;
+let recentHistory = { recentHands: [], recentEvents: [] };
+let timerTicker = null;
 
 // ============================================================
 // WEBSOCKET
@@ -487,15 +511,27 @@ function handleMessage(msg) {
     case 'game_state':
       currentPhase = msg.phase;
       gameState = msg;
+      recentHistory = msg.history || recentHistory;
       renderTable(msg);
       break;
 
     case 'engine_event':
+      if (recentHistory.recentEvents) {
+        recentHistory.recentEvents = [...recentHistory.recentEvents, msg.event].slice(-20);
+      }
       handleEngineEvent(msg.event);
       break;
 
     case 'hand_result':
+      if (msg.event && recentHistory.recentEvents) {
+        recentHistory.recentEvents = [...recentHistory.recentEvents, msg.event].slice(-20);
+      }
       showResultFlash(msg);
+      break;
+
+    case 'history_snapshot':
+      recentHistory = msg.history || recentHistory;
+      renderHistoryOverlay();
       break;
 
     case 'game_over':
@@ -718,6 +754,7 @@ function renderTable(state) {
   betInput.placeholder = `最小加注 ${minRaise}`;
 
   document.getElementById('chat-toggle').classList.add('visible');
+  syncTimerStatus(state.timers || {});
 }
 
 function makeCard(cardStr) {
@@ -782,6 +819,45 @@ function hideScoreboard() {
   document.getElementById('scoreboard-overlay').classList.remove('active');
 }
 
+function showHistoryOverlay() {
+  if (myRoomCode) {
+    send({ type: 'get_hand_history' });
+  }
+  renderHistoryOverlay();
+  document.getElementById('history-overlay').classList.add('active');
+}
+
+function hideHistoryOverlay() {
+  document.getElementById('history-overlay').classList.remove('active');
+}
+
+function renderHistoryOverlay() {
+  const panel = document.getElementById('history-panel');
+  const hands = recentHistory.recentHands || [];
+  const events = recentHistory.recentEvents || [];
+  panel.innerHTML = `
+    <div class="history-section">
+      <div class="history-heading">最近手牌</div>
+      ${hands.length ? hands.map((hand) => `
+        <div class="history-item">
+          <div class="history-title">第${hand.handNumber || '-'}局 · ${hand.handType || '结束'}</div>
+          <div class="history-meta">底池 ${hand.pot} · 公共牌 ${hand.communityCards.join(' ') || '无'}</div>
+          <div class="history-meta">${hand.winners.map((winner) => `${winner.name} +${winner.prize}`).join(' / ')}</div>
+        </div>
+      `).join('') : '<div class="history-empty">还没有完成的手牌记录</div>'}
+    </div>
+    <div class="history-section">
+      <div class="history-heading">最近事件</div>
+      ${events.length ? [...events].reverse().map((event) => `
+        <div class="history-item">
+          <div class="history-title">${formatEngineEvent(event)}</div>
+          <div class="history-meta">${formatTimestamp(event.ts)}</div>
+        </div>
+      `).join('') : '<div class="history-empty">还没有事件记录</div>'}
+    </div>
+  `;
+}
+
 function showResultFlash(msg) {
   const el = document.getElementById('result-flash');
   const winners = msg.winners || [];
@@ -796,6 +872,55 @@ function handleEngineEvent(event) {
   if (event.kind === 'phase_advanced' && event.nextPhase) {
     showNotif(`已进入${phaseName(event.nextPhase)}`);
   }
+}
+
+function syncTimerStatus(timers) {
+  if (timerTicker) clearInterval(timerTicker);
+
+  const target = document.getElementById('table-timer-status');
+  const render = () => {
+    if (!target) return;
+    const now = Date.now();
+    const actionMs = timers.actionDeadlineAt ? Math.max(0, timers.actionDeadlineAt - now) : 0;
+    const disconnectMs = timers.viewerDisconnectDeadlineAt ? Math.max(0, timers.viewerDisconnectDeadlineAt - now) : 0;
+
+    if (disconnectMs > 0) {
+      target.textContent = `断线宽限剩余 ${Math.ceil(disconnectMs / 1000)}s`;
+      return;
+    }
+
+    if (isMyTurn && actionMs > 0) {
+      target.textContent = `你的操作剩余 ${Math.ceil(actionMs / 1000)}s`;
+      return;
+    }
+
+    target.textContent = '';
+  };
+
+  render();
+  timerTicker = setInterval(render, 1000);
+}
+
+function formatEngineEvent(event) {
+  switch (event.kind) {
+    case 'hand_started':
+      return `第${event.handNumber}局开始`;
+    case 'phase_advanced':
+      return `推进到${phaseName(event.nextPhase)}`;
+    case 'action_applied':
+      return `动作已应用`;
+    case 'player_action_requested':
+      return `${event.playerId || '玩家'} 请求 ${event.action}`;
+    case 'hand_finished':
+      return `第${event.handNumber}局结束`;
+    default:
+      return event.kind || '事件';
+  }
+}
+
+function formatTimestamp(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function closeResultFlash() {
@@ -973,7 +1098,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-fold').addEventListener('click', () => doAction('fold'));
   document.getElementById('btn-raise').addEventListener('click', () => doAction('raise'));
   document.getElementById('btn-allin').addEventListener('click', () => doAction('allin'));
+  document.getElementById('history-link').addEventListener('click', showHistoryOverlay);
   document.getElementById('score-link').addEventListener('click', showScoreboard);
+  document.getElementById('history-overlay').addEventListener('click', hideHistoryOverlay);
+  document.getElementById('close-history-btn').addEventListener('click', hideHistoryOverlay);
   document.getElementById('scoreboard-overlay').addEventListener('click', hideScoreboard);
   document.getElementById('close-scoreboard-btn').addEventListener('click', hideScoreboard);
   document.getElementById('result-close-btn').addEventListener('click', closeResultFlash);
@@ -982,6 +1110,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('chat-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') sendChat();
   });
+  document.getElementById('history-panel').addEventListener('click', (event) => event.stopPropagation());
   document.getElementById('score-table').addEventListener('click', (event) => event.stopPropagation());
   updateSessionStatus();
   connect();

@@ -64,6 +64,7 @@ function serializeGameState(room, viewerId) {
   const seatState = room.hand.seats;
   const bettingState = room.hand.betting;
   const actingPlayer = room.players.find((player) => player.seatIndex === seatState.actingSeatIndex) || null;
+  const viewer = room.players.find((player) => player.id === viewerId) || null;
 
   return {
     type: 'game_state',
@@ -79,6 +80,16 @@ function serializeGameState(room, viewerId) {
     bigBlind: room.blinds.big,
     roundNumber: room.hand.handNumber,
     scores: buildScoreboard(room),
+    timers: {
+      actionDeadlineAt: room.gameSession.actionDeadlineAt,
+      actionTimeoutMs: room.gameSession.actionTimeoutMs,
+      viewerDisconnectDeadlineAt: viewer ? viewer.disconnectDeadlineAt : null,
+      disconnectGraceMs: room.gameSession.disconnectGraceMs,
+    },
+    history: {
+      recentHands: room.history.recentHands,
+      recentEvents: room.history.recentEvents,
+    },
     hand: {
       id: room.hand.id,
       number: room.hand.handNumber,
