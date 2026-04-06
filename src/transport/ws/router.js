@@ -634,12 +634,7 @@ function scheduleNextHand(room, store) {
     (player) => player.chips > 0 && player.connectionState === 'connected' && !player.isSittingOut,
   );
   if (eligiblePlayers.length < DEFAULTS.minPlayers) {
-    room.gameSession.active = false;
-    broadcastRoom(room, store, {
-      type: 'game_over',
-      winner: eligiblePlayers[0] ? eligiblePlayers[0].name : null,
-      finalScores: serializeRoomLobby(room).scores,
-    });
+    pauseSessionForPlayers(room, store);
     return;
   }
 
@@ -654,12 +649,7 @@ function scheduleNextHand(room, store) {
       (player) => player.chips > 0 && player.connectionState === 'connected' && !player.isSittingOut,
     );
     if (readyPlayers.length < DEFAULTS.minPlayers) {
-      room.gameSession.active = false;
-      broadcastRoom(room, store, {
-        type: 'game_over',
-        winner: readyPlayers[0] ? readyPlayers[0].name : null,
-        finalScores: serializeRoomLobby(room).scores,
-      });
+      pauseSessionForPlayers(room, store);
       return;
     }
 
@@ -676,6 +666,22 @@ function scheduleNextHand(room, store) {
     });
     broadcastGameState(room, store);
   }, room.gameSession.restartDelayMs);
+}
+
+function pauseSessionForPlayers(room, store) {
+  room.gameSession.active = false;
+  clearNextHandTimer(room);
+  clearActionTimer(room);
+  room.phase = 'waiting';
+  room.updatedAt = Date.now();
+
+  const lobby = serializeRoomLobby(room);
+  broadcastRoom(room, store, {
+    type: 'session_paused',
+    reason: 'waiting_for_players',
+    room: lobby,
+    scores: lobby.scores,
+  });
 }
 
 function clearNextHandTimer(room) {

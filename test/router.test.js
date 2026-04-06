@@ -272,6 +272,36 @@ test('hand_result payload includes restart timing metadata for result pause', ()
   cleanupHarness(harness, created.roomCode);
 });
 
+test('session pauses instead of ending the room when too few players remain for the next hand', async () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  owner.sendMessage({ type: 'start_game' });
+
+  const room = harness.store.rooms.get(created.roomCode);
+  room.gameSession.restartDelayMs = 20;
+
+  owner.sent.length = 0;
+  guest.sent.length = 0;
+
+  guest.sendMessage({ type: 'sit_out' });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  const paused = owner.findMessage('session_paused');
+  const gameOver = owner.findMessage('game_over');
+
+  assert.ok(paused);
+  assert.equal(gameOver, null);
+  assert.equal(room.gameSession.active, false);
+  assert.equal(room.phase, 'waiting');
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 function createHarness() {
   const wss = new EventEmitter();
   const store = createStore();

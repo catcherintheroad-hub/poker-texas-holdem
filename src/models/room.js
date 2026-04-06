@@ -33,7 +33,7 @@ function createRoom({ code, ownerId, bigBlind, maxPlayers }) {
       active: false,
       restartDelayMs: 10000,
       actionTimeoutMs: 40000,
-      disconnectGraceMs: 30000,
+      disconnectGraceMs: 180000,
       nextHandTimer: null,
       actionTimeoutTimer: null,
       actionPlayerId: null,

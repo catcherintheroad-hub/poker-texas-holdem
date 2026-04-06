@@ -30,6 +30,7 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body {
+  height: 100%;
   min-height: 100%;
   background:
     radial-gradient(circle at top, rgba(34, 91, 59, 0.26), transparent 34%),
@@ -38,7 +39,7 @@ html, body {
   font-family: "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
 }
 body {
-  overflow: auto;
+  overflow: hidden;
 }
 
 /* CARD STYLES */
@@ -57,7 +58,7 @@ body {
 /* LOBBY */
 .screen {
   display: none; flex-direction: column; align-items: center; justify-content: center;
-  min-height: 100vh; min-height: 100dvh;
+  min-height: 100vh; min-height: 100dvh; min-height: 100svh;
   padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
 }
 .screen.active { display: flex; }
@@ -79,6 +80,10 @@ body {
   justify-content: flex-start;
   min-height: 100vh;
   min-height: 100dvh;
+  min-height: 100svh;
+  height: 100vh;
+  height: 100dvh;
+  height: 100svh;
   overflow: hidden;
   background:
     radial-gradient(circle at 50% 16%, rgba(255, 233, 138, 0.08), transparent 30%),
@@ -126,7 +131,7 @@ body {
   align-items: center;
   width: 100%;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 12px 16px calc(178px + env(safe-area-inset-bottom));
   min-height: 0;
 }
@@ -1023,12 +1028,12 @@ body {
     right: 0;
     background: transparent;
     border-bottom: none;
-    padding: max(8px, env(safe-area-inset-top)) 14px 0;
+    padding: max(4px, env(safe-area-inset-top)) 10px 0;
   }
   .table-info {
     align-items: center;
-    gap: 12px;
-    font-size: 11px;
+    gap: 8px;
+    font-size: 10px;
   }
   .table-links {
     gap: 10px;
@@ -1041,28 +1046,30 @@ body {
     color: #f3e8b0;
   }
   .control-row {
-    max-width: 320px;
-    margin-top: 8px;
+    max-width: 280px;
+    margin-top: 4px;
+    gap: 4px;
   }
   .mini-btn {
-    padding: 7px 10px;
-    font-size: 11px;
+    padding: 5px 8px;
+    font-size: 10px;
     background: rgba(7, 9, 11, 0.54);
   }
   .session-status,
   .timer-status {
-    margin-top: 4px;
-    font-size: 11px;
+    margin-top: 2px;
+    font-size: 10px;
     text-align: left;
+    min-height: 12px;
   }
   .table-layout {
     justify-content: center;
-    padding: 38px 14px calc(118px + env(safe-area-inset-bottom));
+    padding: 20px 10px calc(98px + env(safe-area-inset-bottom));
     overflow: hidden;
   }
   .table-stage {
-    height: calc(100dvh - 140px);
-    min-height: 300px;
+    height: calc(100svh - 104px);
+    min-height: 260px;
     max-width: 980px;
   }
   .poker-felt {
@@ -1079,8 +1086,8 @@ body {
     font-size: clamp(18px, 3vw, 28px);
   }
   .table-center {
-    inset: 25% 28% 26%;
-    gap: 8px;
+    inset: 24% 29% 25%;
+    gap: 6px;
   }
   .board-lane {
     gap: 6px;
@@ -1158,8 +1165,8 @@ body {
   .your-hand {
     left: 16px;
     transform: none;
-    bottom: calc(var(--action-bar-height, 0px) + 10px + env(safe-area-inset-bottom));
-    padding: 8px 10px;
+    bottom: calc(var(--action-bar-height, 0px) + 6px + env(safe-area-inset-bottom));
+    padding: 6px 8px;
     border-radius: 14px;
   }
   .your-hand-label {
@@ -1172,42 +1179,54 @@ body {
     height: 52px;
   }
   .action-bar {
-    padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+    padding: 4px 8px calc(6px + env(safe-area-inset-bottom));
     background: transparent;
     border-top: none;
   }
   .action-bar-inner {
     grid-template-columns: minmax(210px, 0.85fr) minmax(0, 1.55fr);
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 18px;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 16px;
   }
   .bet-display {
     gap: 6px;
   }
   .bet-pill-inline {
-    padding: 6px 9px;
-    font-size: 11px;
+    padding: 5px 8px;
+    font-size: 10px;
   }
   .bet-display span {
-    font-size: 14px;
+    font-size: 13px;
   }
   .bet-input-row {
-    grid-template-columns: 130px minmax(0, 1fr);
+    grid-template-columns: 110px minmax(0, 1fr);
   }
   .bet-input {
-    padding: 10px 12px;
-    font-size: 14px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .raise-slider {
+    height: 6px;
+  }
+  .raise-slider::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+  }
+  .raise-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
   }
   .action-row {
-    margin-top: 8px;
+    margin-top: 6px;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
+    gap: 5px;
   }
   .action-btn {
-    min-height: 42px;
+    min-height: 36px;
     border-radius: 10px;
-    font-size: 11px;
+    font-size: 10px;
+    padding: 8px 6px;
   }
   .chat-toggle {
     right: 14px;
@@ -1525,6 +1544,15 @@ function handleMessage(msg) {
       if (msg.room) {
         updateWaitingRoom(msg.room);
       }
+      break;
+
+    case 'session_paused':
+      if (msg.room) {
+        updateWaitingRoom(msg.room);
+      }
+      currentPhase = 'waiting';
+      showScreen('waiting');
+      showNotif('玩家不足，牌局已暂停，等待继续');
       break;
 
     case 'game_state':
