@@ -1861,6 +1861,8 @@ function handleMessage(msg) {
           showNotif('已加入房间，本手先旁观，下一手即可参与');
         }
       } else {
+        currentPhase = msg.room?.phase || 'waiting';
+        gameState = null;
         showScreen('waiting');
         document.getElementById('display-room-code').textContent = msg.roomCode;
         updateWaitingRoom(msg.room);
@@ -1883,12 +1885,12 @@ function handleMessage(msg) {
       break;
 
     case 'player_joined':
-      updateWaitingRoom({ players: msg.players, ownerId: msg.ownerId || latestRoomLobby?.ownerId, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
+      updateWaitingRoom({ players: msg.players, ownerId: msg.ownerId || latestRoomLobby?.ownerId, phase: latestRoomLobby?.phase || currentPhase || 'waiting', scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
       showNotif(msg.player.name + ' 加入了房间');
       break;
 
     case 'player_left':
-      updateWaitingRoom({ players: msg.players, ownerId: msg.newOwnerId || latestRoomLobby?.ownerId, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
+      updateWaitingRoom({ players: msg.players, ownerId: msg.newOwnerId || latestRoomLobby?.ownerId, phase: latestRoomLobby?.phase || currentPhase || 'waiting', scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
       if (msg.newOwnerId === myPlayerId) showNotif('你已成为房主');
       break;
 
@@ -1906,6 +1908,9 @@ function handleMessage(msg) {
 
     case 'room_updated':
       if (msg.room) {
+        if (msg.room.phase) {
+          currentPhase = msg.room.phase;
+        }
         updateWaitingRoom(msg.room, { stayOnCurrentScreen: currentPhase !== 'waiting' && !!gameState });
       }
       break;
@@ -1924,6 +1929,7 @@ function handleMessage(msg) {
     case 'session_left':
       myRoomCode = null;
       myPlayerId = null;
+      currentPhase = 'waiting';
       gameState = null;
       latestRoomLobby = null;
       pendingMessages.length = 0;
