@@ -6,6 +6,13 @@ const path = require('path');
 function createApp(store) {
   const app = express();
 
+  app.use((request, response, next) => {
+    if (request.path.endsWith('.html')) {
+      response.set('Cache-Control', 'no-store, max-age=0');
+    }
+    next();
+  });
+
   app.use(express.static(path.join(process.cwd(), 'public')));
 
   app.get('/api/rooms', (_request, response) => {
