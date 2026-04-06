@@ -397,7 +397,7 @@ body {
   background: linear-gradient(180deg, rgba(6, 7, 9, 0.96), rgba(13, 16, 18, 0.94));
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
-  padding: 8px 44px 8px 12px;
+  padding: 8px 44px 8px 18px;
   box-shadow: 0 14px 28px rgba(0,0,0,0.28);
   min-height: 50px;
 }
@@ -511,8 +511,10 @@ body {
   margin-top: 0;
   min-height: 42px;
   position: absolute;
-  top: -12px;
-  left: 14px;
+  top: 50%;
+  left: 0;
+  transform: translate(-52%, -50%);
+  z-index: 2;
 }
 .player-hand .card,
 .player-hand .card-back {
@@ -1018,7 +1020,7 @@ body {
   }
   .seat-shell {
     min-height: 54px;
-    padding: 8px 48px 8px 12px;
+    padding: 8px 48px 8px 18px;
     border-radius: 999px;
     background: rgba(5, 8, 14, 0.92);
   }
@@ -1067,8 +1069,9 @@ body {
   }
   .player-hand {
     position: absolute;
-    top: -14px;
-    left: 12px;
+    top: 50%;
+    left: 0;
+    transform: translate(-48%, -50%);
     margin-top: 0;
     gap: 2px;
     min-height: 0;
@@ -1287,7 +1290,7 @@ body {
     min-width: 144px;
   }
   .seat-shell {
-    padding: 7px 42px 7px 10px;
+    padding: 7px 42px 7px 18px;
     min-height: 48px;
   }
   .player-avatar {
@@ -1301,8 +1304,9 @@ body {
     font-size: 10px;
   }
   .player-hand {
-    top: -10px;
-    left: 12px;
+    top: 50%;
+    left: 0;
+    transform: translate(-46%, -50%);
   }
   .player-hand .card,
   .player-hand .card-back,
@@ -2071,6 +2075,12 @@ function renderTable(state) {
 
   const toCall = Math.max(0, currentBet - (myP?.currentBet || 0));
   const myChips = myP ? myP.chips : 0;
+  const lastRaiseSize = betting.lastRaiseSize ?? state.bigBlind ?? 0;
+  const minimumTotalAction = currentBet > 0
+    ? Math.max(minRaise, currentBet + lastRaiseSize)
+    : minRaise;
+  const minRaiseBy = Math.max(0, minimumTotalAction - (myP?.currentBet || 0));
+  const maxRaiseBy = Math.max(0, myChips - toCall);
 
   const btnCheck = document.getElementById('btn-check');
   const btnCall = document.getElementById('btn-call');
@@ -2082,7 +2092,7 @@ function renderTable(state) {
   const canCheck = isMyTurn && toCall === 0;
   const canCall = isMyTurn && toCall > 0 && myChips > 0;
   const canFold = isMyTurn;
-  const canRaise = isMyTurn && myChips > Math.max(0, toCall);
+  const canRaise = isMyTurn && myChips > Math.max(0, toCall) && maxRaiseBy >= minRaiseBy;
   const canAllin = isMyTurn && myChips > 0;
 
   btnCheck.disabled = !canCheck;
@@ -2094,8 +2104,6 @@ function renderTable(state) {
 
   document.getElementById('to-call-display').textContent = toCall;
   document.getElementById('my-chips-display').textContent = myChips;
-  const minRaiseBy = Math.max(0, minRaise - (myP?.currentBet || 0));
-  const maxRaiseBy = Math.max(0, myChips - toCall);
   document.getElementById('action-min-raise-display').textContent = minRaiseBy;
   document.getElementById('raise-min-label').textContent = minRaiseBy;
   document.getElementById('raise-max-label').textContent = maxRaiseBy;
