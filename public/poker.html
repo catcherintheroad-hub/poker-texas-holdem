@@ -1742,18 +1742,18 @@ function handleMessage(msg) {
 
     case 'room_updated':
       if (msg.room) {
-        updateWaitingRoom(msg.room, { stayOnCurrentScreen: currentPhase !== 'waiting' || !!gameState });
+        updateWaitingRoom(msg.room, { stayOnCurrentScreen: currentPhase !== 'waiting' && !!gameState });
       }
       break;
 
     case 'session_paused':
+      gameState = null;
+      previousTableSnapshot = null;
       if (msg.room) {
         updateWaitingRoom(msg.room, { stayOnCurrentScreen: true });
       }
       currentPhase = 'waiting';
-      if (!document.getElementById('table-screen').classList.contains('active')) {
-        showScreen('waiting');
-      }
+      showScreen('waiting');
       showNotif('玩家不足，等待补码或新玩家加入');
       break;
 
@@ -1823,6 +1823,16 @@ function handleMessage(msg) {
       break;
 
     case 'rebuy_result':
+      if (msg.player && latestRoomLobby?.players) {
+        latestRoomLobby = {
+          ...latestRoomLobby,
+          players: latestRoomLobby.players.map((player) => player.id === msg.player.id ? { ...player, ...msg.player } : player),
+          scores: msg.scores || latestRoomLobby.scores,
+        };
+        if (currentPhase === 'waiting') {
+          updateWaitingRoom(latestRoomLobby);
+        }
+      }
       showNotif(`补码成功 +${msg.amount}`);
       break;
   }
