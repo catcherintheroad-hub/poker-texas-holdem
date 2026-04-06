@@ -117,6 +117,31 @@ test('router emits structured engine events alongside state snapshots', () => {
   cleanupHarness(harness, created.roomCode);
 });
 
+test('router returns action_result acknowledgements for accepted and rejected actions', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  owner.sendMessage({ type: 'start_game' });
+
+  owner.sent.length = 0;
+  owner.sendMessage({ type: 'action', action: 'call', amount: 0 });
+  const accepted = owner.findMessage('action_result');
+  assert.ok(accepted);
+  assert.equal(accepted.status, 'accepted');
+
+  guest.sent.length = 0;
+  guest.sendMessage({ type: 'action', action: 'raise', amount: 1 });
+  const rejected = guest.findMessage('action_result');
+  assert.ok(rejected);
+  assert.equal(rejected.status, 'rejected');
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 test('router can return recent hand and event history snapshots', () => {
   const harness = createHarness();
   const owner = harness.connectSocket();

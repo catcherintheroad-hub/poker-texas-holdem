@@ -284,6 +284,9 @@ body { overflow: hidden; }
   pointer-events: none;
 }
 .player-seat.me { z-index: 8; }
+.table-stage.heads-up .player-seat {
+  width: min(20vw, 186px);
+}
 .seat-shell {
   position: relative;
   background: linear-gradient(180deg, rgba(10,16,12,0.92), rgba(18,27,21,0.86));
@@ -708,6 +711,9 @@ body { overflow: hidden; }
     width: 100%;
     aspect-ratio: 0.78 / 1;
   }
+  .table-stage.heads-up {
+    aspect-ratio: 0.84 / 1;
+  }
   .poker-felt {
     inset: 1.5% 0;
     border-radius: 38% / 30%;
@@ -722,6 +728,9 @@ body { overflow: hidden; }
   .table-center {
     inset: 20% 8% 26%;
     gap: 10px;
+  }
+  .table-stage.heads-up .table-center {
+    inset: 27% 10% 31%;
   }
   .board-lane { gap: 6px; }
   .board-slot {
@@ -752,6 +761,10 @@ body { overflow: hidden; }
   .player-seat {
     width: 98px;
     min-width: 98px;
+  }
+  .table-stage.heads-up .player-seat {
+    width: 112px;
+    min-width: 112px;
   }
   .seat-shell {
     padding: 8px 8px 9px;
@@ -800,6 +813,9 @@ body { overflow: hidden; }
   .player-seat.me .player-hand .card-back {
     width: 26px;
     height: 36px;
+  }
+  .table-stage.heads-up .player-seat.me .player-hand {
+    display: none;
   }
   .your-hand {
     bottom: 8px;
@@ -937,10 +953,10 @@ body { overflow: hidden; }
       <div class="bet-display">
         <div class="bet-pill-inline">需要跟注 <span id="to-call-display">0</span></div>
         <div class="bet-pill-inline">你有 <span id="my-chips-display">0</span></div>
-        <div class="bet-pill-inline">最小加注 <span id="action-min-raise-display">0</span></div>
+        <div class="bet-pill-inline">至少再加 <span id="action-min-raise-display">0</span></div>
       </div>
       <div class="bet-input-row">
-        <input type="number" class="bet-input" id="bet-input" placeholder="加注金额" min="0" />
+        <input type="number" class="bet-input" id="bet-input" placeholder="再加多少" min="0" />
       </div>
     </div>
     <div class="action-row">
@@ -1002,6 +1018,7 @@ let recentHistory = { recentHands: [], recentEvents: [] };
 let timerTicker = null;
 let previousTableSnapshot = null;
 let lastHandResult = null;
+let pendingActionState = null;
 
 // ============================================================
 // WEBSOCKET
@@ -1152,6 +1169,7 @@ function handleMessage(msg) {
       break;
 
     case 'action_result':
+      handleActionResult(msg);
       break;
   }
 }
@@ -1235,6 +1253,8 @@ function renderTable(state) {
   const currentBet = betting.currentBet ?? state.currentBet ?? 0;
   const minRaise = betting.minRaise ?? state.minRaise ?? (state.bigBlind * 2);
   const players = rotatePlayersForViewer(state.players || []);
+  const stage = document.getElementById('table-stage');
+  stage.classList.toggle('heads-up', players.length === 2);
   const previousSnapshot = previousTableSnapshot;
   const nextSnapshot = {
     boardCount: board.filter((card) => card && card !== '?').length,
@@ -1335,6 +1355,10 @@ function renderTable(state) {
 
   // Your hand
   const myP = state.players.find(p => p.id === myPlayerId);
+  if (pendingActionState && state.currentPlayerId !== myPlayerId) {
+    pendingActionState = null;
+    setActionButtonsDisabled(false);
+  }
   updateParticipationButtons(myP);
   updateSessionStatus(myP);
   const yourHandArea = document.getElementById('your-hand-area');
@@ -1386,9 +1410,10 @@ function renderTable(state) {
 
   document.getElementById('to-call-display').textContent = toCall;
   document.getElementById('my-chips-display').textContent = myChips;
-  document.getElementById('action-min-raise-display').textContent = minRaise;
+  const minRaiseBy = Math.max(0, minRaise - (myP?.currentBet || 0));
+  document.getElementById('action-min-raise-display').textContent = minRaiseBy;
   betInput.max = myChips;
-  betInput.placeholder = `最小加注 ${minRaise}`;
+  betInput.placeholder = `至少再加 ${minRaiseBy}`;
 
   document.getElementById('chat-toggle').classList.add('visible');
   syncTimerStatus(state.timers || {});
@@ -1425,8 +1450,37 @@ function phaseName(phase) {
 // ============================================================
 function doAction(action) {
   const betInput = document.getElementById('bet-input');
-  const amount = parseInt(betInput.value) || 0;
-  send({ type: 'action', action, amount });
+  const rawAmount = parseInt(betInput.value, 10) || 0;
+  const myPlayer = gameState?.players?.find((player) => player.id === myPlayerId);
+  const baseCommitted = myPlayer?.currentBet || 0;
+  const amount = action === 'raise' ? baseCommitted + rawAmount : rawAmount;
+
+  if (!isMyTurn) {
+    showNotif('还没轮到你', 'error');
+    return;
+  }
+
+  if (pendingActionState) {
+    showNotif('操作已发送，等待服务器确认');
+    return;
+  }
+
+  if (action === 'raise' && rawAmount <= 0) {
+    showNotif('请输入要再加多少', 'error');
+    return;
+  }
+
+  const sent = send({ type: 'action', action, amount });
+  if (!sent) {
+    return;
+  }
+
+  pendingActionState = {
+    action,
+    sentAt: Date.now(),
+  };
+  setActionButtonsDisabled(true);
+  showNotif(action === 'allin' ? '已发送 All-in' : `已发送${actionLabel(action)}`);
   betInput.value = '';
 }
 
@@ -1575,6 +1629,21 @@ function closeResultFlash() {
   document.getElementById('result-flash').classList.remove('active');
 }
 
+function handleActionResult(msg) {
+  if (msg.status === 'accepted') {
+    pendingActionState = {
+      action: msg.action,
+      sentAt: Date.now(),
+      accepted: true,
+    };
+    setActionButtonsDisabled(true);
+    return;
+  }
+
+  pendingActionState = null;
+  setActionButtonsDisabled(false);
+}
+
 function rotatePlayersForViewer(players) {
   const sorted = [...players].sort((left, right) => left.seatIndex - right.seatIndex);
   const viewerIndex = sorted.findIndex((player) => player.id === myPlayerId);
@@ -1585,6 +1654,21 @@ function rotatePlayersForViewer(players) {
 }
 
 function getSeatPosition(index, total) {
+  if (total === 2) {
+    return [
+      { x: 50, y: 84 },
+      { x: 50, y: 16 },
+    ][index];
+  }
+
+  if (total === 3) {
+    return [
+      { x: 50, y: 82 },
+      { x: 18, y: 30 },
+      { x: 82, y: 30 },
+    ][index];
+  }
+
   const angleStart = 90;
   const angleStep = 360 / Math.max(total, 2);
   const angle = (angleStart + index * angleStep) * Math.PI / 180;
@@ -1615,6 +1699,27 @@ function formatActionLabel(action) {
     .replace(/^bet /, '下注 ')
     .replace(/^fold$/, '弃牌')
     .replace(/^check$/, '过牌');
+}
+
+function actionLabel(action) {
+  switch (action) {
+    case 'check': return '过牌';
+    case 'call': return '跟注';
+    case 'fold': return '弃牌';
+    case 'raise': return '加注';
+    case 'bet': return '下注';
+    case 'allin': return 'All-in';
+    default: return action;
+  }
+}
+
+function setActionButtonsDisabled(disabled) {
+  ['btn-check', 'btn-call', 'btn-fold', 'btn-raise', 'btn-allin'].forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) {
+      button.disabled = disabled;
+    }
+  });
 }
 
 function renderSidePotStrip() {

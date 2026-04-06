@@ -31,8 +31,8 @@ function createRoom({ code, ownerId, bigBlind, maxPlayers }) {
     },
     gameSession: {
       active: false,
-      restartDelayMs: 4000,
-      actionTimeoutMs: 25000,
+      restartDelayMs: 7000,
+      actionTimeoutMs: 40000,
       disconnectGraceMs: 30000,
       nextHandTimer: null,
       actionTimeoutTimer: null,

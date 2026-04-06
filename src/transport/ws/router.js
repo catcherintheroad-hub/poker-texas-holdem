@@ -283,9 +283,24 @@ function handleAction({ context, message, socket, store }) {
 
   const result = applyAction(room, player, message.action, message.amount);
   if (!result.ok) {
+    sendJson(socket, {
+      type: 'action_result',
+      status: 'rejected',
+      action: message.action,
+      message: result.error,
+    });
     sendJson(socket, { type: 'error', message: result.error });
     return;
   }
+
+  sendJson(socket, {
+    type: 'action_result',
+    status: 'accepted',
+    action: message.action,
+    amount: message.amount || 0,
+    handId: room.hand.id,
+    phase: room.phase,
+  });
 
   logRoomEvent('player_action', {
     roomCode: room.code,
