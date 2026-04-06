@@ -117,6 +117,7 @@ function handleCreateRoom({ context, message, socket, store }) {
   room.players.push(player);
   room.updatedAt = Date.now();
   store.rooms.set(code, room);
+  touchRoomActivity(room, store);
   context.roomCode = code;
   logRoomEvent('room_created', { roomCode: code, playerId: context.playerId, maxPlayers, bigBlind });
 
@@ -167,6 +168,7 @@ function handleJoinRoom({ context, message, socket, store }) {
 
   room.players.push(player);
   room.updatedAt = Date.now();
+  touchRoomActivity(room, store);
   context.roomCode = room.code;
   logRoomEvent('player_joined', { roomCode: room.code, playerId: context.playerId, seatIndex });
 
@@ -221,6 +223,7 @@ function handleResumeSession({ context, message, socket, store }) {
   player.disconnectDeadlineAt = null;
   room.updatedAt = Date.now();
   clearDisconnectGraceTimer(room, playerId);
+  touchRoomActivity(room, store);
   logRoomEvent('session_resumed', { roomCode, playerId, phase: room.phase });
 
   sendJson(socket, {
@@ -264,7 +267,10 @@ function handleStartGame({ context, socket, store }) {
 
   clearNextHandTimer(room);
   room.gameSession.active = true;
+  room.gameSession.finalizedAt = null;
+  room.gameSession.finalReason = null;
   initializeHand(room);
+  touchRoomActivity(room, store);
   logRoomEvent('hand_started', { roomCode: room.code, handId: room.hand.id, handNumber: room.hand.handNumber });
   appendRoomEvent(room, {
     kind: 'hand_started',
@@ -313,6 +319,7 @@ function handleAction({ context, message, socket, store }) {
     handId: room.hand.id,
     phase: room.phase,
   });
+  touchRoomActivity(room, store);
 
   logRoomEvent('player_action', {
     roomCode: room.code,
@@ -362,6 +369,7 @@ function handleChat({ context, message, socket, store }) {
     timestamp: Date.now(),
   });
   room.updatedAt = Date.now();
+  touchRoomActivity(room, store);
 
   if (room.chatHistory.length > 100) {
     room.chatHistory.shift();
@@ -393,6 +401,7 @@ function handleParticipationChange({ context, store, mode }) {
     player.isSittingOut = false;
     player.status = player.chips > 0 ? 'active' : player.status;
     room.updatedAt = Date.now();
+    touchRoomActivity(room, store);
     logRoomEvent('player_sit_in', { roomCode: room.code, playerId: player.id });
     broadcastRoom(room, store, { type: 'room_updated', room: serializeRoomLobby(room) });
     maybeResumePausedSession(room, store);
@@ -408,6 +417,7 @@ function handleParticipationChange({ context, store, mode }) {
     player.status = 'spectating';
   }
   room.updatedAt = Date.now();
+  touchRoomActivity(room, store);
   logRoomEvent(mode === 'spectate' ? 'player_spectate' : 'player_sit_out', { roomCode: room.code, playerId: player.id });
 
   let outcome = null;
@@ -466,6 +476,7 @@ function handleRebuy({ context, message, socket, store }) {
     player.status = 'active';
   }
   room.updatedAt = Date.now();
+  touchRoomActivity(room, store);
 
   appendRoomEvent(room, {
     kind: 'player_rebuy',
@@ -501,8 +512,21 @@ function handleLeaveRoom({ context, store }) {
     return;
   }
 
+  const socket = store.sockets.get(context.playerId);
+  if (!canLeaveRoom(room)) {
+    sendJson(socket, {
+      type: 'error',
+      message: '牌桌在 1 小时无动作前不能退出，超时后会自动弹出总结算',
+    });
+    return;
+  }
+
   removePlayerFromRoom(room, context.playerId, store);
   context.roomCode = null;
+  sendJson(socket, {
+    type: 'session_left',
+    roomCode: room.code,
+  });
 }
 
 function handleGetHandHistory({ context, socket, store }) {
@@ -907,6 +931,7 @@ function clearDisconnectGraceTimer(room, playerId) {
 function clearRoomTimers(room) {
   clearNextHandTimer(room);
   clearActionTimer(room);
+  clearIdleTimer(room);
 
   if (!room.gameSession) {
     return;
@@ -916,6 +941,78 @@ function clearRoomTimers(room) {
     clearTimeout(timer);
   }
   room.gameSession.disconnectTimers.clear();
+}
+
+function touchRoomActivity(room, store) {
+  if (!room?.gameSession || room.gameSession.finalizedAt) {
+    return;
+  }
+
+  room.gameSession.lastActivityAt = Date.now();
+  room.gameSession.idleDeadlineAt = room.gameSession.lastActivityAt + room.gameSession.idleTimeoutMs;
+  scheduleIdleTimer(room, store);
+}
+
+function scheduleIdleTimer(room, store) {
+  clearIdleTimer(room);
+
+  if (!room?.gameSession || room.gameSession.finalizedAt) {
+    return;
+  }
+
+  const delay = Math.max(0, room.gameSession.idleDeadlineAt - Date.now());
+  room.gameSession.idleTimeoutTimer = setTimeout(() => {
+    room.gameSession.idleTimeoutTimer = null;
+
+    if (!store.rooms.has(room.code) || room.gameSession.finalizedAt) {
+      return;
+    }
+
+    finalizeRoomForIdle(room, store);
+  }, delay);
+}
+
+function clearIdleTimer(room) {
+  if (!room?.gameSession?.idleTimeoutTimer) {
+    return;
+  }
+
+  clearTimeout(room.gameSession.idleTimeoutTimer);
+  room.gameSession.idleTimeoutTimer = null;
+}
+
+function finalizeRoomForIdle(room, store) {
+  room.gameSession.finalizedAt = Date.now();
+  room.gameSession.finalReason = 'idle_timeout';
+  room.gameSession.active = false;
+  room.phase = 'waiting';
+  clearNextHandTimer(room);
+  clearActionTimer(room);
+  clearIdleTimer(room);
+  room.updatedAt = Date.now();
+
+  const summary = buildFinalSummary(room);
+  broadcastRoom(room, store, {
+    type: 'session_finalized',
+    reason: 'idle_timeout',
+    finalizedAt: room.gameSession.finalizedAt,
+    summary,
+  });
+}
+
+function buildFinalSummary(room) {
+  const scoreboard = serializeRoomLobby(room).scores;
+  return {
+    roomCode: room.code,
+    finalizedAt: room.gameSession.finalizedAt,
+    totalHands: room.history.recentHands.length,
+    durationMs: Math.max(0, room.gameSession.finalizedAt - room.createdAt),
+    scores: scoreboard,
+  };
+}
+
+function canLeaveRoom(room) {
+  return Boolean(room?.gameSession?.finalizedAt);
 }
 
 function canSeatNextHand(room) {

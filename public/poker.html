@@ -740,6 +740,47 @@ body {
   font-size: 13px;
   color: #cfd7e0;
 }
+.final-summary {
+  width: min(100%, 560px);
+}
+.final-summary-body {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+}
+.final-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
+  text-align: left;
+}
+.final-summary-name {
+  font-size: 15px;
+  font-weight: 800;
+}
+.final-summary-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #d5ddd6;
+}
+.final-summary-profit {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--gold);
+  align-self: center;
+}
+.final-summary-profit.loss {
+  color: #ff8b82;
+}
+.final-summary-foot {
+  margin-top: 14px;
+  font-size: 13px;
+  color: #cfd7e0;
+}
 
 /* WAITING STATE */
 .waiting-dots { color: var(--gold); font-size: 20px; letter-spacing: 4px; }
@@ -1546,6 +1587,16 @@ body {
   </div>
 </div>
 
+<div id="final-summary-overlay" class="result-flash">
+  <div class="result-card final-summary">
+    <div class="result-title">总结算</div>
+    <div class="result-subtitle" id="final-summary-subtitle">牌桌已结束</div>
+    <div class="final-summary-body" id="final-summary-body"></div>
+    <div class="final-summary-foot" id="final-summary-foot"></div>
+    <button id="final-summary-close-btn" class="result-close">知道了</button>
+  </div>
+</div>
+
 <!-- CHAT PANEL -->
 <button id="chat-toggle" class="chat-toggle">💬</button>
 <div id="chat-panel" class="chat-panel">
@@ -1576,6 +1627,7 @@ let lastHandResult = null;
 let pendingActionState = null;
 let nextHandTicker = null;
 let tableMenuPinnedOpen = false;
+let latestRoomLobby = null;
 
 // ============================================================
 // WEBSOCKET
@@ -1647,6 +1699,7 @@ function handleMessage(msg) {
       socketState = 'connected';
       isRestoringSession = false;
       saveSession({ playerId: myPlayerId, roomCode: myRoomCode });
+      latestRoomLobby = msg.room || latestRoomLobby;
       updateSessionStatus();
       if (msg.gameState) {
         currentPhase = msg.gameState.phase;
@@ -1678,12 +1731,12 @@ function handleMessage(msg) {
       break;
 
     case 'player_joined':
-      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores }, { stayOnCurrentScreen: true });
+      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
       showNotif(msg.player.name + ' 加入了房间');
       break;
 
     case 'player_left':
-      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores }, { stayOnCurrentScreen: true });
+      updateWaitingRoom({ players: msg.players, phase: currentPhase === 'waiting' ? 'waiting' : currentPhase, scores: msg.scores, session: latestRoomLobby?.session }, { stayOnCurrentScreen: true });
       if (msg.newOwnerId === myPlayerId) showNotif('你已成为房主');
       break;
 
@@ -1702,6 +1755,18 @@ function handleMessage(msg) {
         showScreen('waiting');
       }
       showNotif('玩家不足，等待补码或新玩家加入');
+      break;
+
+    case 'session_left':
+      myRoomCode = null;
+      myPlayerId = null;
+      gameState = null;
+      latestRoomLobby = null;
+      pendingMessages.length = 0;
+      clearSession();
+      updateSessionStatus();
+      showScreen('lobby');
+      showNotif('已离开房间');
       break;
 
     case 'game_state':
@@ -1733,6 +1798,20 @@ function handleMessage(msg) {
 
     case 'game_over':
       showNotif('游戏结束！' + (msg.winner ? msg.winner + ' 获胜！' : ''));
+      break;
+
+    case 'session_finalized':
+      latestRoomLobby = {
+        ...(latestRoomLobby || {}),
+        session: {
+          ...(latestRoomLobby?.session || {}),
+          finalizedAt: msg.finalizedAt || Date.now(),
+          finalReason: msg.reason,
+        },
+      };
+      updateSessionStatus();
+      showFinalSummary(msg.summary, msg.reason);
+      showNotif('牌桌因 1 小时无动作，已弹出总结算');
       break;
 
     case 'chat_message':
@@ -1781,18 +1860,13 @@ function startGame() {
 
 function leaveRoom() {
   send({ type: 'leave_room' });
-  myRoomCode = null;
-  myPlayerId = null;
-  pendingMessages.length = 0;
-  clearSession();
-  updateSessionStatus();
-  showScreen('lobby');
 }
 
 // ============================================================
 // WAITING ROOM
 // ============================================================
 function updateWaitingRoom(room, options = {}) {
+  latestRoomLobby = room || latestRoomLobby;
   const list = document.getElementById('player-list');
   list.innerHTML = '';
   const players = room.players || [];
@@ -1825,6 +1899,15 @@ function updateWaitingRoom(room, options = {}) {
   const me = players.find(p => p.id === myPlayerId);
   updateParticipationButtons(me);
   updateRebuyControls(me);
+  if (room?.session?.finalizedAt) {
+    showFinalSummary({
+      roomCode: myRoomCode,
+      finalizedAt: room.session.finalizedAt,
+      totalHands: recentHistory.recentHands?.length || 0,
+      durationMs: 0,
+      scores: room.scores || [],
+    }, room.session.finalReason || 'idle_timeout');
+  }
   updateSessionStatus();
   if (!options.stayOnCurrentScreen) {
     showScreen('waiting');
@@ -2221,6 +2304,13 @@ function syncTimerStatus(timers) {
       return;
     }
 
+    const idleMs = timers.idleDeadlineAt ? Math.max(0, timers.idleDeadlineAt - now) : 0;
+    if (idleMs > 0) {
+      const minutes = Math.ceil(idleMs / 60000);
+      target.textContent = `${minutes} 分钟内若无人操作，牌桌会总结算`;
+      return;
+    }
+
     target.textContent = '';
   };
 
@@ -2256,6 +2346,40 @@ function closeResultFlash() {
     nextHandTicker = null;
   }
   document.getElementById('result-flash').classList.remove('active');
+}
+
+function showFinalSummary(summary, reason) {
+  const overlay = document.getElementById('final-summary-overlay');
+  const body = document.getElementById('final-summary-body');
+  const subtitle = document.getElementById('final-summary-subtitle');
+  const foot = document.getElementById('final-summary-foot');
+  const scores = summary?.scores || [];
+
+  subtitle.textContent = reason === 'idle_timeout'
+    ? '牌桌超过 1 小时没有任何动作，已自动总结算'
+    : '本桌已完成总结算';
+  body.innerHTML = scores.map((entry, index) => {
+    const profitText = entry.profitLoss > 0 ? `+${entry.profitLoss}` : `${entry.profitLoss}`;
+    return `
+      <div class="final-summary-row">
+        <div>
+          <div class="final-summary-name">${index + 1}. ${entry.name}${entry.id === myPlayerId ? ' (你)' : ''}</div>
+          <div class="final-summary-meta">总买入 ${entry.totalBuyIn} · 当前筹码 ${entry.chips} · ${entry.buyInCount || 0} 次买入</div>
+        </div>
+        <div class="final-summary-profit${entry.profitLoss < 0 ? ' loss' : ''}">${profitText}</div>
+      </div>
+    `;
+  }).join('');
+
+  const finalizedAt = summary?.finalizedAt ? new Date(summary.finalizedAt) : null;
+  foot.textContent = finalizedAt
+    ? `${summary.roomCode || myRoomCode || ''} · 共 ${summary.totalHands || 0} 手 · ${finalizedAt.toLocaleString()}`
+    : `${summary?.roomCode || myRoomCode || ''} · 共 ${summary?.totalHands || 0} 手`;
+  overlay.classList.add('active');
+}
+
+function hideFinalSummary() {
+  document.getElementById('final-summary-overlay').classList.remove('active');
 }
 
 function startNextHandCountdown(nextHandStartsAt, restartDelayMs) {
@@ -2725,10 +2849,16 @@ function updateSessionStatus(me) {
   const joinButton = document.getElementById('join-room-btn');
   const waitRebuyButton = document.getElementById('wait-rebuy-btn');
   const tableRebuyButton = document.getElementById('table-rebuy-btn');
+  const leaveRoomButton = document.getElementById('leave-room-btn');
   if (createButton) createButton.disabled = socketState !== 'connected';
   if (joinButton) joinButton.disabled = socketState !== 'connected';
   if (waitRebuyButton) waitRebuyButton.disabled = socketState !== 'connected' || !myRoomCode;
   if (tableRebuyButton) tableRebuyButton.disabled = socketState !== 'connected' || !myRoomCode;
+  if (leaveRoomButton) {
+    const canLeave = Boolean(latestRoomLobby?.session?.finalizedAt);
+    leaveRoomButton.disabled = socketState !== 'connected' || !myRoomCode || !canLeave;
+    leaveRoomButton.textContent = canLeave ? '离开房间' : '满 1 小时无动作后可离开';
+  }
   if (lobby) lobby.textContent = statusText;
   if (waiting) waiting.textContent = statusText;
   if (table) table.textContent = statusText;
@@ -2828,6 +2958,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scoreboard-overlay').addEventListener('click', hideScoreboard);
   document.getElementById('close-scoreboard-btn').addEventListener('click', hideScoreboard);
   document.getElementById('result-close-btn').addEventListener('click', closeResultFlash);
+  document.getElementById('final-summary-close-btn').addEventListener('click', hideFinalSummary);
   document.getElementById('chat-toggle').addEventListener('click', toggleChat);
   document.getElementById('chat-send-btn').addEventListener('click', sendChat);
   document.getElementById('chat-input').addEventListener('keydown', (event) => {

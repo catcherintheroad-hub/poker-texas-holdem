@@ -362,6 +362,74 @@ test('scoreboard serializes total buy-ins and running profit/loss', () => {
   cleanupHarness(harness, created.roomCode);
 });
 
+test('room cannot be left before the one-hour idle settlement triggers', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+
+  owner.sent.length = 0;
+  owner.sendMessage({ type: 'leave_room' });
+
+  const error = owner.findMessage('error');
+  const left = owner.findMessage('session_left');
+
+  assert.ok(error);
+  assert.match(error.message, /1 小时无动作前不能退出/);
+  assert.equal(left, null);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
+test('room broadcasts final settlement after idle timeout and then allows leaving', async () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+
+  const room = harness.store.rooms.get(created.roomCode);
+  room.gameSession.idleTimeoutMs = 20;
+  room.gameSession.idleDeadlineAt = Date.now() + 20;
+  if (room.gameSession.idleTimeoutTimer) {
+    clearTimeout(room.gameSession.idleTimeoutTimer);
+    room.gameSession.idleTimeoutTimer = null;
+  }
+  owner.sendMessage({ type: 'chat', message: 'ping' });
+  room.gameSession.idleTimeoutMs = 20;
+  room.gameSession.idleDeadlineAt = Date.now() + 20;
+  if (room.gameSession.idleTimeoutTimer) {
+    clearTimeout(room.gameSession.idleTimeoutTimer);
+  }
+  room.gameSession.idleTimeoutTimer = setTimeout(() => {}, 999999);
+  clearTimeout(room.gameSession.idleTimeoutTimer);
+  room.gameSession.idleTimeoutTimer = null;
+  room.gameSession.lastActivityAt = Date.now();
+  room.gameSession.idleDeadlineAt = room.gameSession.lastActivityAt + 20;
+  owner.sent.length = 0;
+  guest.sent.length = 0;
+  owner.sendMessage({ type: 'sit_out' });
+  room.gameSession.idleTimeoutMs = 20;
+  room.gameSession.idleDeadlineAt = Date.now() + 20;
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const finalized = owner.findMessage('session_finalized');
+  assert.ok(finalized);
+  assert.equal(finalized.reason, 'idle_timeout');
+  assert.equal(finalized.summary.scores.length, 2);
+
+  owner.sent.length = 0;
+  owner.sendMessage({ type: 'leave_room' });
+  const left = owner.findMessage('session_left');
+  assert.ok(left);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 function pauseSessionForTest(room, store) {
   room.phase = 'waiting';
   room.gameSession.pausedReason = 'waiting_for_players';
@@ -423,6 +491,9 @@ function cleanupHarness(harness, roomCode) {
 
   if (room.gameSession.actionTimeoutTimer) {
     clearTimeout(room.gameSession.actionTimeoutTimer);
+  }
+  if (room.gameSession.idleTimeoutTimer) {
+    clearTimeout(room.gameSession.idleTimeoutTimer);
   }
   if (room.gameSession.nextHandTimer) {
     clearTimeout(room.gameSession.nextHandTimer);

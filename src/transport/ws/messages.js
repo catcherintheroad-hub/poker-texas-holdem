@@ -37,6 +37,12 @@ function serializeRoomLobby(room) {
     maxPlayers: room.maxPlayers,
     players: sortPlayersBySeat(room.players).map((player) => publicPlayer(player, room)),
     scores: buildScoreboard(room),
+    session: {
+      idleDeadlineAt: room.gameSession.idleDeadlineAt,
+      idleTimeoutMs: room.gameSession.idleTimeoutMs,
+      finalizedAt: room.gameSession.finalizedAt,
+      finalReason: room.gameSession.finalReason,
+    },
   };
 }
 
@@ -92,6 +98,8 @@ function serializeGameState(room, viewerId) {
       actionTimeoutMs: room.gameSession.actionTimeoutMs,
       viewerDisconnectDeadlineAt: viewer ? viewer.disconnectDeadlineAt : null,
       disconnectGraceMs: room.gameSession.disconnectGraceMs,
+      idleDeadlineAt: room.gameSession.idleDeadlineAt,
+      idleTimeoutMs: room.gameSession.idleTimeoutMs,
     },
     history: {
       recentHands: room.history.recentHands,
