@@ -18,7 +18,7 @@ function applyAction(room, player, action, amount, dependencies) {
   }
 
   const toCall = Math.max(0, room.hand.betting.currentBet - player.committedChips);
-  const normalizedAction = normalizeAction(action, toCall);
+  const normalizedAction = normalizeAction(action, toCall, room);
 
   switch (normalizedAction) {
     case 'fold':
@@ -278,8 +278,8 @@ function commitChips(room, player, amount) {
   room.hand.betting.pot += commitAmount;
 }
 
-function normalizeAction(action, toCall) {
-  if (action === 'raise' && toCall === 0) {
+function normalizeAction(action, toCall, room) {
+  if (action === 'raise' && toCall === 0 && room.hand.betting.currentBet === 0) {
     return 'bet';
   }
 

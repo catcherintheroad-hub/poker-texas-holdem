@@ -143,6 +143,24 @@ test('heads-up all-in does not skip the opponent response', () => {
   assert.deepEqual(room.hand.betting.pendingSeatIndexes, [1]);
 });
 
+test('big blind can still raise preflop after another player limps', () => {
+  const room = createTestRoom(['a', 'b']);
+
+  initializeHand(room);
+
+  let actor = actingPlayer(room);
+  let result = applyAction(room, actor, 'call', 0);
+  assert.equal(result.ok, true);
+
+  actor = actingPlayer(room);
+  assert.equal(actor.seatIndex, room.hand.seats.bigBlindSeatIndex);
+  result = applyAction(room, actor, 'raise', 20);
+
+  assert.equal(result.ok, true);
+  assert.equal(room.hand.betting.currentBet, 20);
+  assert.equal(actor.lastAction, 'raise to 20');
+});
+
 test('river showdown resolves side pots across multiple winners', () => {
   const room = createTestRoom(['a', 'b', 'c']);
   const [a, b, c] = room.players;
