@@ -405,6 +405,42 @@ test('rebuy records buy-in history and resumes a paused session', async () => {
   cleanupHarness(harness, created.roomCode);
 });
 
+test('busted player stays in room with a rebuy grace window before falling back to waiting for players', async () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  const joined = guest.findMessage('room_joined');
+  owner.sendMessage({ type: 'start_game' });
+
+  const room = harness.store.rooms.get(created.roomCode);
+  room.gameSession.rebuyGraceMs = 25;
+  room.gameSession.restartDelayMs = 5;
+
+  const guestPlayer = room.players.find((player) => player.id === joined.playerId);
+  guestPlayer.chips = 0;
+  guestPlayer.totalCommittedChips = room.blinds.big;
+
+  owner.sent.length = 0;
+  guest.sent.length = 0;
+
+  guest.sendMessage({ type: 'sit_out' });
+  const paused = owner.findMessage('session_paused');
+  assert.ok(paused);
+  assert.equal(paused.reason, 'waiting_for_rebuy');
+  assert.equal(room.gameSession.pausedReason, 'waiting_for_rebuy');
+  assert.deepEqual(room.gameSession.rebuyPendingPlayerIds, [guestPlayer.id]);
+  assert.ok(room.players.some((player) => player.id === guestPlayer.id));
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(room.gameSession.pausedReason, 'waiting_for_players');
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 test('scoreboard serializes total buy-ins and running profit/loss', () => {
   const harness = createHarness();
   const owner = harness.connectSocket();
@@ -557,9 +593,15 @@ function pauseSessionForTest(room, store) {
   room.phase = 'waiting';
   room.gameSession.pausedReason = 'waiting_for_players';
   room.gameSession.active = true;
+  room.gameSession.rebuyDeadlineAt = null;
+  room.gameSession.rebuyPendingPlayerIds = [];
   if (room.gameSession.nextHandTimer) {
     clearTimeout(room.gameSession.nextHandTimer);
     room.gameSession.nextHandTimer = null;
+  }
+  if (room.gameSession.rebuyTimeoutTimer) {
+    clearTimeout(room.gameSession.rebuyTimeoutTimer);
+    room.gameSession.rebuyTimeoutTimer = null;
   }
   if (store && room.players.length) {
     room.updatedAt = Date.now();
@@ -620,6 +662,9 @@ function cleanupHarness(harness, roomCode) {
   }
   if (room.gameSession.nextHandTimer) {
     clearTimeout(room.gameSession.nextHandTimer);
+  }
+  if (room.gameSession.rebuyTimeoutTimer) {
+    clearTimeout(room.gameSession.rebuyTimeoutTimer);
   }
   for (const timer of room.gameSession.disconnectTimers.values()) {
     clearTimeout(timer);

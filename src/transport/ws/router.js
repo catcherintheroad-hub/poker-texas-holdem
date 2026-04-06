@@ -776,6 +776,8 @@ function publishOutcome(room, store, outcome) {
         restartDelayMs: canSeatNextHand(room) ? room.gameSession.restartDelayMs : null,
         nextHandStartsAt: canSeatNextHand(room) ? Date.now() + room.gameSession.restartDelayMs : null,
         waitingForPlayers: !canSeatNextHand(room),
+        waitingReason: getPauseReasonForNextHand(room),
+        rebuyDeadlineAt: shouldPauseForRebuys(room) ? Date.now() + room.gameSession.rebuyGraceMs : null,
       });
       broadcastGameState(room, store);
       scheduleNextHand(room, store);
@@ -826,9 +828,11 @@ function scheduleNextHand(room, store) {
   }
 
   if (!canSeatNextHand(room)) {
-    pauseSessionForPlayers(room, store);
+    pauseSession(room, store);
     return;
   }
+
+  clearRebuyPause(room);
 
   room.gameSession.nextHandTimer = setTimeout(() => {
     room.gameSession.nextHandTimer = null;
@@ -838,7 +842,7 @@ function scheduleNextHand(room, store) {
     }
 
     if (!canSeatNextHand(room)) {
-      pauseSessionForPlayers(room, store);
+      pauseSession(room, store);
       return;
     }
 
@@ -857,8 +861,39 @@ function scheduleNextHand(room, store) {
   }, room.gameSession.restartDelayMs);
 }
 
+function pauseSession(room, store) {
+  if (shouldPauseForRebuys(room)) {
+    pauseSessionForRebuy(room, store);
+    return;
+  }
+
+  pauseSessionForPlayers(room, store);
+}
+
+function pauseSessionForRebuy(room, store) {
+  clearNextHandTimer(room);
+  clearActionTimer(room);
+  room.phase = 'waiting';
+  room.gameSession.pausedReason = 'waiting_for_rebuy';
+  room.gameSession.rebuyPendingPlayerIds = getPendingRebuyPlayers(room).map((player) => player.id);
+  room.gameSession.rebuyDeadlineAt = Date.now() + room.gameSession.rebuyGraceMs;
+  room.updatedAt = Date.now();
+  scheduleRebuyTimeout(room, store);
+
+  const lobby = serializeRoomLobby(room);
+  broadcastRoom(room, store, {
+    type: 'session_paused',
+    reason: 'waiting_for_rebuy',
+    rebuyDeadlineAt: room.gameSession.rebuyDeadlineAt,
+    rebuyPendingPlayerIds: [...room.gameSession.rebuyPendingPlayerIds],
+    room: lobby,
+    scores: lobby.scores,
+  });
+}
+
 function pauseSessionForPlayers(room, store) {
   clearNextHandTimer(room);
+  clearRebuyPause(room);
   clearActionTimer(room);
   room.phase = 'waiting';
   room.gameSession.pausedReason = 'waiting_for_players';
@@ -878,10 +913,15 @@ function maybeResumePausedSession(room, store) {
     return;
   }
 
+  if (room.gameSession.pausedReason === 'waiting_for_rebuy' && !shouldPauseForRebuys(room)) {
+    clearRebuyPause(room);
+  }
+
   if (!canSeatNextHand(room)) {
     return;
   }
 
+  clearRebuyPause(room);
   room.gameSession.pausedReason = null;
   scheduleNextHand(room, store);
   broadcastRoom(room, store, {
@@ -897,6 +937,46 @@ function clearNextHandTimer(room) {
 
   clearTimeout(room.gameSession.nextHandTimer);
   room.gameSession.nextHandTimer = null;
+}
+
+function clearRebuyPause(room) {
+  if (!room.gameSession) {
+    return;
+  }
+
+  if (room.gameSession.rebuyTimeoutTimer) {
+    clearTimeout(room.gameSession.rebuyTimeoutTimer);
+    room.gameSession.rebuyTimeoutTimer = null;
+  }
+
+  room.gameSession.rebuyDeadlineAt = null;
+  room.gameSession.rebuyPendingPlayerIds = [];
+}
+
+function scheduleRebuyTimeout(room, store) {
+  if (!room.gameSession?.rebuyDeadlineAt) {
+    return;
+  }
+
+  if (room.gameSession.rebuyTimeoutTimer) {
+    clearTimeout(room.gameSession.rebuyTimeoutTimer);
+  }
+
+  const delay = Math.max(0, room.gameSession.rebuyDeadlineAt - Date.now());
+  room.gameSession.rebuyTimeoutTimer = setTimeout(() => {
+    room.gameSession.rebuyTimeoutTimer = null;
+
+    if (!store.rooms.has(room.code) || !room.gameSession.active || room.gameSession.pausedReason !== 'waiting_for_rebuy') {
+      return;
+    }
+
+    if (canSeatNextHand(room)) {
+      maybeResumePausedSession(room, store);
+      return;
+    }
+
+    pauseSessionForPlayers(room, store);
+  }, delay);
 }
 
 function syncActionTimer(room, store) {
@@ -1115,6 +1195,27 @@ function canSeatNextHand(room) {
   return room.players.filter(
     (player) => player.chips > 0 && player.connectionState === 'connected' && !player.isSittingOut,
   ).length >= DEFAULTS.minPlayers;
+}
+
+function getPendingRebuyPlayers(room) {
+  return room.players.filter(
+    (player) =>
+      player.chips <= 0 &&
+      player.connectionState === 'connected' &&
+      !player.holeCards.length,
+  );
+}
+
+function shouldPauseForRebuys(room) {
+  return getPendingRebuyPlayers(room).length > 0;
+}
+
+function getPauseReasonForNextHand(room) {
+  if (canSeatNextHand(room)) {
+    return null;
+  }
+
+  return shouldPauseForRebuys(room) ? 'waiting_for_rebuy' : 'waiting_for_players';
 }
 
 function logRoomEvent(event, details) {

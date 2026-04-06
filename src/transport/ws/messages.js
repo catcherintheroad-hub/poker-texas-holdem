@@ -41,6 +41,10 @@ function serializeRoomLobby(room) {
     session: {
       idleDeadlineAt: room.gameSession.idleDeadlineAt,
       idleTimeoutMs: room.gameSession.idleTimeoutMs,
+      pausedReason: room.gameSession.pausedReason,
+      rebuyDeadlineAt: room.gameSession.rebuyDeadlineAt,
+      rebuyGraceMs: room.gameSession.rebuyGraceMs,
+      rebuyPendingPlayerIds: room.gameSession.rebuyPendingPlayerIds || [],
       finalizedAt: room.gameSession.finalizedAt,
       finalReason: room.gameSession.finalReason,
     },

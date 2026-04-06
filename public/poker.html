@@ -1923,7 +1923,7 @@ function handleMessage(msg) {
       }
       currentPhase = 'waiting';
       showScreen('waiting');
-      showNotif('玩家不足，等待补码或新玩家加入');
+      showNotif(msg.reason === 'waiting_for_rebuy' ? '有玩家破产，等待 2 分钟内补码继续' : '玩家不足，等待补码或新玩家加入');
       break;
 
     case 'session_left':
@@ -2094,15 +2094,16 @@ function updateWaitingRoom(room, options = {}) {
   const activeCount = players.filter((player) => player.chips > 0 && !player.isSittingOut && player.connectionState === 'connected').length;
   document.getElementById('player-count-display').textContent = `${players.length} 名玩家，${activeCount} 人可参与下一手`;
   const startBtn = document.getElementById('start-btn');
+  const rebuyCountdown = getRebuyCountdownLabel(room?.session);
   if (room.ownerId !== myPlayerId) {
     startBtn.disabled = true;
-    startBtn.textContent = activeCount >= 2 ? '等待房主开始游戏' : '等待至少2名可参与玩家';
+    startBtn.textContent = rebuyCountdown || (activeCount >= 2 ? '等待房主开始游戏' : '等待至少2名可参与玩家');
   } else if ((room.phase === 'waiting') && activeCount >= 2) {
     startBtn.disabled = false;
     startBtn.textContent = '开始游戏';
   } else {
     startBtn.disabled = true;
-    startBtn.textContent = activeCount >= 2 ? '等待本局结束后继续' : '等待至少2名可参与玩家';
+    startBtn.textContent = rebuyCountdown || (activeCount >= 2 ? '等待本局结束后继续' : '等待至少2名可参与玩家');
   }
   document.getElementById('table-room-code').textContent = myRoomCode || '';
   const me = players.find(p => p.id === myPlayerId);
@@ -2671,7 +2672,8 @@ function startNextHandCountdown(nextHandStartsAt, restartDelayMs) {
 
   const target = document.getElementById('result-countdown');
   if (!nextHandStartsAt && !restartDelayMs) {
-    target.textContent = '牌桌已暂停，等待补码或其他玩家输入房间码加入';
+    const rebuyCountdown = getRebuyCountdownLabel(lastHandResult);
+    target.textContent = rebuyCountdown || '牌桌已暂停，等待补码或其他玩家输入房间码加入';
     return;
   }
   const deadline = nextHandStartsAt || (Date.now() + (restartDelayMs || 0));
@@ -2705,6 +2707,18 @@ function handleActionResult(msg) {
 
   pendingActionState = null;
   setActionButtonsDisabled(false);
+}
+
+function getRebuyCountdownLabel(source) {
+  const reason = source?.reason || source?.waitingReason || source?.pausedReason;
+  const deadline = source?.rebuyDeadlineAt || source?.session?.rebuyDeadlineAt;
+  if (reason !== 'waiting_for_rebuy' || !deadline) {
+    return '';
+  }
+
+  const remainingMs = Math.max(0, deadline - Date.now());
+  const seconds = Math.ceil(remainingMs / 1000);
+  return seconds > 0 ? `等待破产玩家补码 ${seconds}s` : '等待破产玩家补码';
 }
 
 function rotatePlayersForViewer(players) {
