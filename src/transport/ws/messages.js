@@ -2,6 +2,7 @@
 
 const WebSocket = require('ws');
 const { cardToString } = require('../../engine/cards');
+const { buildSidePots } = require('../../engine/settlement');
 const { sortPlayersBySeat } = require('../../engine/seats');
 
 function sendJson(socket, payload) {
@@ -90,6 +91,13 @@ function serializeGameState(room, viewerId) {
       recentHands: room.history.recentHands,
       recentEvents: room.history.recentEvents,
     },
+    sidePots: buildSidePots(room.players).map((sidePot, index) => ({
+      amount: sidePot.amount,
+      label: index === 0 ? '主池' : `边池 ${index}`,
+      eligiblePlayerIds: sidePot.eligiblePlayers
+        .filter((player) => !player.hasFolded)
+        .map((player) => player.id),
+    })),
     hand: {
       id: room.hand.id,
       number: room.hand.handNumber,

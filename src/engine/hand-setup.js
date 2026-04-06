@@ -74,7 +74,6 @@ function resetPlayersForNewHand(players) {
   for (const player of players) {
     player.holeCards = [];
     player.status = player.chips > 0 ? 'active' : 'sitting_out';
-    player.connectionState = 'connected';
     player.committedChips = 0;
     player.totalCommittedChips = 0;
     player.hasFolded = false;

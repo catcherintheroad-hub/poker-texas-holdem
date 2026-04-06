@@ -182,6 +182,7 @@ function normalizeSeatDistance(room, seatIndex) {
 }
 
 module.exports = {
+  buildSidePots,
   getRemainingPlayers,
   resolveShowdown,
   resolveUncontestedWin,

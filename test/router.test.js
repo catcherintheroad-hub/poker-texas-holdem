@@ -7,6 +7,7 @@ const WebSocket = require('ws');
 
 const { registerWebSocketServer } = require('../src/transport/ws/router');
 const { createStore } = require('../src/state/store');
+const { serializeGameState } = require('../src/transport/ws/messages');
 
 test('router can create, join, and start a room', () => {
   const harness = createHarness();
@@ -161,6 +162,84 @@ test('router can return recent hand and event history snapshots', () => {
   assert.ok(Array.isArray(history.history.recentEvents));
   assert.equal(history.history.recentEvents.some((event) => event.kind === 'hand_started'), true);
 
+  cleanupHarness(harness, created.roomCode);
+});
+
+test('router rejects joins while an active session is between hands', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+  const lateJoiner = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  owner.sendMessage({ type: 'start_game' });
+
+  const room = harness.store.rooms.get(created.roomCode);
+  room.phase = 'waiting';
+  room.gameSession.active = true;
+
+  lateJoiner.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Late' });
+  const rejected = lateJoiner.findMessage('error');
+
+  assert.ok(rejected);
+  assert.match(rejected.message, /暂不支持中途加入/);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
+test('serialized game state includes live side-pot breakdown for all-in scenarios', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+  const third = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  third.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Third' });
+  const room = harness.store.rooms.get(created.roomCode);
+  const [a, b, c] = room.players;
+
+  room.phase = 'turn';
+  room.hand = {
+    id: 'live-sidepots',
+    phase: 'turn',
+    deck: [],
+    board: [],
+    handNumber: 1,
+    seats: {
+      buttonSeatIndex: 0,
+      smallBlindSeatIndex: 1,
+      bigBlindSeatIndex: 2,
+      actingSeatIndex: 0,
+    },
+    betting: {
+      pot: 600,
+      currentBet: 0,
+      minRaise: 10,
+      lastRaiseSize: 10,
+      pendingSeatIndexes: [0],
+      raiseRightsSeatIndexes: [0],
+    },
+    showdown: {
+      seatIndexes: [],
+    },
+    log: {
+      actionLog: [],
+    },
+  };
+  a.holeCards = [{ rank: 'A', suit: '♠' }, { rank: 'A', suit: '♥' }];
+  b.holeCards = [{ rank: 'K', suit: '♠' }, { rank: 'K', suit: '♥' }];
+  c.holeCards = [{ rank: 'Q', suit: '♠' }, { rank: 'Q', suit: '♥' }];
+  a.totalCommittedChips = 100;
+  b.totalCommittedChips = 200;
+  c.totalCommittedChips = 300;
+
+  const state = serializeGameState(room, a.id);
+
+  assert.deepEqual(state.sidePots.map((pot) => pot.amount), [300, 200, 100]);
   cleanupHarness(harness, created.roomCode);
 });
 

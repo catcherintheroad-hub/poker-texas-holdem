@@ -31,6 +31,7 @@ function handlePlayerExit(room, playerId) {
   player.holeCards = [];
   player.lastAction = 'left';
   removePendingSeat(room.hand.betting.pendingSeatIndexes, player.seatIndex);
+  removePendingSeat(room.hand.betting.raiseRightsSeatIndexes, player.seatIndex);
 
   const remainingPlayers = getRemainingPlayers(room);
   if (remainingPlayers.length === 1) {

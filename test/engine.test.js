@@ -3,11 +3,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { applyAction, initializeHand } = require('../src/engine/hand-flow');
+const { applyAction, handlePlayerExit, initializeHand } = require('../src/engine/hand-flow');
 const { compareEvaluations, evaluateBestHand } = require('../src/engine/hand-evaluator');
+const { buildSidePots } = require('../src/engine/settlement');
 const { createHandState } = require('../src/models/hand');
 const { createPlayer } = require('../src/models/player');
 const { createRoom } = require('../src/models/room');
+const { prepareNextHandOrWaiting } = require('../src/engine/hand-reset');
 
 test('evaluateBestHand prefers a straight flush over four of a kind', () => {
   const straightFlush = evaluateBestHand([
@@ -57,6 +59,27 @@ test('initializeHand skips disconnected players when seating a new hand', () => 
   assert.equal(room.players[2].holeCards.length, 0);
   assert.equal(room.hand.seats.smallBlindSeatIndex, 0);
   assert.equal(room.hand.seats.bigBlindSeatIndex, 1);
+});
+
+test('initializeHand preserves disconnected players outside the hand', () => {
+  const room = createTestRoom(['a', 'b', 'c']);
+  room.players[2].connectionState = 'disconnected';
+
+  initializeHand(room);
+
+  assert.equal(room.players[2].connectionState, 'disconnected');
+  assert.equal(room.players[2].holeCards.length, 0);
+});
+
+test('between-hand waiting state does not allow new players to count as joinable session state', () => {
+  const room = createTestRoom(['a', 'b']);
+  room.gameSession.active = true;
+
+  initializeHand(room);
+  prepareNextHandOrWaiting(room);
+
+  assert.equal(room.phase, 'waiting');
+  assert.equal(room.gameSession.active, true);
 });
 
 test('preflop action sequence advances to flop', () => {
@@ -234,6 +257,28 @@ test('betting invariant keeps pot equal to total committed chips', () => {
 
   const totalCommitted = room.players.reduce((sum, player) => sum + player.totalCommittedChips, 0);
   assert.equal(room.hand.betting.pot, totalCommitted);
+});
+
+test('buildSidePots exposes live main pot and side pots from committed chips', () => {
+  const room = createTestRoom(['a', 'b', 'c']);
+  room.players[0].totalCommittedChips = 100;
+  room.players[1].totalCommittedChips = 200;
+  room.players[2].totalCommittedChips = 300;
+
+  const sidePots = buildSidePots(room.players);
+
+  assert.deepEqual(sidePots.map((pot) => pot.amount), [300, 200, 100]);
+});
+
+test('handlePlayerExit also removes raise rights for the leaving seat', () => {
+  const room = createTestRoom(['a', 'b', 'c']);
+
+  initializeHand(room);
+  room.hand.betting.raiseRightsSeatIndexes = room.players.map((player) => player.seatIndex);
+
+  handlePlayerExit(room, room.players[1].id);
+
+  assert.equal(room.hand.betting.raiseRightsSeatIndexes.includes(room.players[1].seatIndex), false);
 });
 
 function card(rank, suit) {

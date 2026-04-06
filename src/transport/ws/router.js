@@ -140,8 +140,8 @@ function handleJoinRoom({ context, message, socket, store }) {
     return;
   }
 
-  if (room.phase !== 'waiting') {
-    sendJson(socket, { type: 'error', message: '当前分支暂不支持游戏进行中途加入' });
+  if (room.phase !== 'waiting' || room.gameSession.active) {
+    sendJson(socket, { type: 'error', message: '当前牌局进行中，暂不支持中途加入' });
     return;
   }
 
