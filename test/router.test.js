@@ -243,6 +243,35 @@ test('serialized game state includes live side-pot breakdown for all-in scenario
   cleanupHarness(harness, created.roomCode);
 });
 
+test('hand_result payload includes restart timing metadata for result pause', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+  owner.sendMessage({ type: 'start_game' });
+
+  const room = harness.store.rooms.get(created.roomCode);
+  room.gameSession.restartDelayMs = 10000;
+  const start = Date.now();
+
+  owner.sent.length = 0;
+  guest.sent.length = 0;
+
+  guest.sendMessage({ type: 'sit_out' });
+  const result = owner.findMessage('hand_result');
+
+  assert.ok(result);
+  assert.equal(result.restartDelayMs, 10000);
+  assert.equal(typeof result.nextHandStartsAt, 'number');
+  assert.ok(result.nextHandStartsAt >= start + 9000);
+  assert.ok(result.nextHandStartsAt <= Date.now() + 11000);
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 function createHarness() {
   const wss = new EventEmitter();
   const store = createStore();

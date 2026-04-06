@@ -548,11 +548,29 @@ body {
 .result-flash {
   position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200;
   display: none; flex-direction: column; align-items: center; justify-content: center;
+  padding: 20px;
 }
 .result-flash.active { display: flex; }
-.result-title { font-size: 28px; font-weight: 900; color: var(--gold); margin-bottom: 16px; }
+.result-card {
+  width: min(100%, 540px);
+  background: linear-gradient(180deg, rgba(11, 17, 20, 0.96), rgba(18, 23, 30, 0.92));
+  border: 1px solid rgba(232, 199, 115, 0.22);
+  border-radius: 24px;
+  padding: 24px 20px;
+  box-shadow: 0 22px 60px rgba(0,0,0,0.34);
+  text-align: center;
+}
+.result-title { font-size: 28px; font-weight: 900; color: var(--gold); margin-bottom: 10px; }
+.result-subtitle { font-size: 14px; color: #c8d1d9; margin-bottom: 14px; }
 .result-hand { font-size: 18px; color: var(--text); margin-bottom: 8px; }
-.result-winners { font-size: 16px; color: #27ae60; margin-bottom: 20px; }
+.result-winners { font-size: 16px; color: #8ff0b3; margin-bottom: 16px; line-height: 1.5; }
+.result-board {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px 0 6px;
+  min-height: 54px;
+}
 .result-close { background: var(--gold); color: #111; border: none; border-radius: 12px; padding: 14px 32px; font-size: 16px; font-weight: 700; cursor: pointer; }
 .result-sidepots {
   margin-top: 12px;
@@ -568,6 +586,11 @@ body {
   border: 1px solid rgba(232,199,115,0.2);
   color: var(--text);
   font-size: 13px;
+}
+.result-countdown {
+  margin-top: 14px;
+  font-size: 13px;
+  color: #cfd7e0;
 }
 
 /* WAITING STATE */
@@ -716,6 +739,11 @@ body {
 }
 
 @media (max-width: 560px) {
+  #table-screen {
+    background:
+      radial-gradient(circle at 50% 10%, rgba(93, 89, 164, 0.34), transparent 30%),
+      linear-gradient(180deg, #26234a 0%, #18162f 60%, #111321 100%);
+  }
   .card { width: 32px; height: 46px; font-size: 12px; }
   .card-back { width: 32px; height: 46px; }
   .logo { font-size: 24px; margin-bottom: 20px; }
@@ -740,19 +768,19 @@ body {
     height: clamp(340px, calc(100dvh - 280px), 430px);
   }
   .poker-felt {
-    inset: 1.5% 0;
-    border-radius: 38% / 30%;
+    inset: 4% 2%;
+    border-radius: 40% / 32%;
     box-shadow:
-      inset 0 0 0 16px var(--rail),
-      inset 0 0 0 19px rgba(255,255,255,0.12),
+      inset 0 0 0 12px #74522d,
+      inset 0 0 0 15px rgba(255,255,255,0.1),
       inset 0 -20px 28px rgba(0,0,0,0.3),
       0 16px 36px rgba(0,0,0,0.34);
   }
   .poker-felt::after { inset: 11% 8%; }
-  .felt-brand { top: 10%; font-size: 16px; }
+  .felt-brand { top: 10%; font-size: 18px; color: rgba(255,255,255,0.1); }
   .table-center {
-    inset: 22% 10% 28%;
-    gap: 10px;
+    inset: 25% 14% 28%;
+    gap: 8px;
   }
   .table-stage.heads-up .table-center {
     inset: 28% 12% 33%;
@@ -766,10 +794,10 @@ body {
   .pot-cluster {
     flex-direction: column;
     gap: 4px;
-    padding: 8px 12px;
+    padding: 7px 10px;
   }
   .pot-main {
-    font-size: 16px;
+    font-size: 15px;
   }
   .center-meta {
     gap: 8px;
@@ -784,61 +812,82 @@ body {
     transform: translate(-50%, -50%) rotate(-10deg) scale(0.82);
   }
   .player-seat {
-    width: 90px;
-    min-width: 90px;
+    width: 122px;
+    min-width: 122px;
   }
   .table-stage.heads-up .player-seat {
-    width: 104px;
-    min-width: 104px;
+    width: 134px;
+    min-width: 134px;
   }
   .seat-shell {
-    padding: 8px 8px 9px;
-    border-radius: 16px;
+    min-height: 54px;
+    padding: 8px 48px 8px 12px;
+    border-radius: 999px;
+    background: rgba(5, 8, 14, 0.92);
+  }
+  .seat-anchor {
+    top: -10px;
+    right: 28px;
   }
   .seat-topline {
-    gap: 6px;
-    margin-bottom: 6px;
+    gap: 0;
+    margin-bottom: 0;
   }
   .player-avatar {
-    width: 28px;
-    height: 28px;
+    position: absolute;
+    right: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 42px;
+    height: 42px;
+    border: 3px solid rgba(255,255,255,0.18);
     font-size: 14px;
   }
   .player-name {
     font-size: 11px;
   }
   .player-chips {
-    font-size: 10px;
+    font-size: 12px;
+    color: #7ee081;
   }
-  .player-status {
-    font-size: 9px;
-    padding: 2px 6px;
+  .seat-status-row {
+    display: none;
   }
   .seat-bet-marker {
-    margin-top: 6px;
-    padding: 4px 8px;
-    font-size: 10px;
-    min-width: 50px;
+    position: absolute;
+    left: 12px;
+    bottom: -12px;
+    margin-top: 0;
+    padding: 3px 8px;
+    font-size: 9px;
+    min-width: 0;
   }
   .seat-action {
-    margin-top: 4px;
+    margin-top: 2px;
     font-size: 10px;
+    color: #98d6ff;
+    min-height: 12px;
   }
   .player-hand {
-    gap: 3px;
-    min-height: 38px;
+    position: absolute;
+    top: -14px;
+    left: 12px;
+    margin-top: 0;
+    gap: 2px;
+    min-height: 0;
   }
   .player-hand .card,
   .player-hand .card-back {
-    width: 22px;
-    height: 32px;
-    font-size: 10px;
+    width: 18px;
+    height: 24px;
+    font-size: 8px;
   }
   .player-seat.me .player-hand .card,
   .player-seat.me .player-hand .card-back {
-    width: 26px;
-    height: 36px;
+    width: 18px;
+    height: 24px;
   }
+  .player-seat.me .player-hand,
   .table-stage.heads-up .player-seat.me .player-hand {
     display: none;
   }
@@ -874,6 +923,18 @@ body {
     height: 40px;
     right: 12px;
     bottom: calc(170px + env(safe-area-inset-bottom));
+  }
+  .result-card {
+    padding: 20px 16px;
+    border-radius: 20px;
+  }
+  .result-title {
+    font-size: 24px;
+  }
+  .result-board .card,
+  .result-board .card-back {
+    width: 34px;
+    height: 48px;
   }
 }
 
@@ -1020,11 +1081,16 @@ body {
 
 <!-- RESULT FLASH -->
 <div id="result-flash" class="result-flash">
-  <div class="result-title" id="result-title">赢家！</div>
-  <div class="result-hand" id="result-hand"></div>
-  <div class="result-winners" id="result-winners"></div>
-  <div class="result-sidepots" id="result-sidepots"></div>
-  <button id="result-close-btn" class="result-close">下一局</button>
+  <div class="result-card">
+    <div class="result-title" id="result-title">赢家！</div>
+    <div class="result-subtitle" id="result-subtitle">本局结算中</div>
+    <div class="result-hand" id="result-hand"></div>
+    <div class="result-winners" id="result-winners"></div>
+    <div class="result-board" id="result-board"></div>
+    <div class="result-sidepots" id="result-sidepots"></div>
+    <div class="result-countdown" id="result-countdown"></div>
+    <button id="result-close-btn" class="result-close">收起结果</button>
+  </div>
 </div>
 
 <!-- CHAT PANEL -->
@@ -1046,6 +1112,7 @@ let currentPhase = 'waiting';
 let gameState = null;
 let isMyTurn = false;
 const SESSION_KEY = 'poker-session';
+const PLAYER_NAME_KEY = 'poker-player-name';
 const pendingMessages = [];
 let socketState = 'connecting';
 let isRestoringSession = false;
@@ -1054,6 +1121,7 @@ let timerTicker = null;
 let previousTableSnapshot = null;
 let lastHandResult = null;
 let pendingActionState = null;
+let nextHandTicker = null;
 
 // ============================================================
 // WEBSOCKET
@@ -1213,13 +1281,13 @@ function handleMessage(msg) {
 // LOBBY ACTIONS
 // ============================================================
 function createRoom() {
-  const name = document.getElementById('name-input').value.trim() || 'Player';
+  const name = getPlayerName();
   const bb = 10; // default big blind
   send({ type: 'create_room', playerName: name, bigBlind: bb, maxPlayers: 10 });
 }
 
 function joinRoom() {
-  const name = document.getElementById('name-input').value.trim() || 'Player';
+  const name = getPlayerName();
   const code = document.getElementById('join-code-input').value.trim().toUpperCase();
   if (!code) { showNotif('请输入房间码', 'error'); return; }
   send({ type: 'join_room', roomCode: code, playerName: name });
@@ -1376,7 +1444,7 @@ function renderTable(state) {
         <div class="seat-topline">
           <div class="player-avatar">${getEmoji(p.name)}</div>
           <div class="player-info">
-            <div class="player-name">${isMe ? '你' : p.name}</div>
+            <div class="player-name">${p.name}${isMe ? ' · 你' : ''}</div>
             <div class="player-chips">筹码 ${p.chips}</div>
           </div>
         </div>
@@ -1588,13 +1656,21 @@ function renderHistoryOverlay() {
 function showResultFlash(msg) {
   const el = document.getElementById('result-flash');
   const winners = msg.winners || [];
-  document.getElementById('result-title').textContent = winners.length > 1 ? '平局！' : '赢家！';
-  document.getElementById('result-hand').textContent = winners[0]?.handType || '';
-  document.getElementById('result-winners').textContent = winners.map(w => `${w.name} +${w.prize ?? msg.prize}`).join(', ');
+  const winnerNames = winners.map((winner) => winner.name).join(' / ');
+  document.getElementById('result-title').textContent = winners.length > 1 ? '本局平分' : '本局赢家';
+  document.getElementById('result-subtitle').textContent = winnerNames ? `${winnerNames} 获胜` : '结算完成';
+  document.getElementById('result-hand').textContent = winners[0]?.handType || msg.handType || '';
+  document.getElementById('result-winners').textContent = winners.length
+    ? winners.map((winner) => `${winner.name} 赢得 ${winner.prize ?? msg.prize}`).join(' · ')
+    : '本局已结束';
+  document.getElementById('result-board').innerHTML = (msg.communityCards || [])
+    .map((card) => makeCard(card).outerHTML)
+    .join('');
   const sidePots = document.getElementById('result-sidepots');
   sidePots.innerHTML = (msg.sidePots || []).length
     ? msg.sidePots.map((pot, index) => `<div class="result-pot-chip">${index === 0 ? '主池' : `边池 ${index}`} · ${pot.amount}</div>`).join('')
     : `<div class="result-pot-chip">总底池 ${msg.pot || 0}</div>`;
+  startNextHandCountdown(msg.nextHandStartsAt, msg.restartDelayMs);
   el.classList.add('active');
   animatePotToWinners(winners);
 }
@@ -1606,6 +1682,7 @@ function handleEngineEvent(event) {
   }
   if (event.kind === 'hand_started') {
     lastHandResult = null;
+    closeResultFlash();
     animateDealToSeats();
   }
 }
@@ -1660,7 +1737,35 @@ function formatTimestamp(value) {
 }
 
 function closeResultFlash() {
+  if (nextHandTicker) {
+    clearInterval(nextHandTicker);
+    nextHandTicker = null;
+  }
   document.getElementById('result-flash').classList.remove('active');
+}
+
+function startNextHandCountdown(nextHandStartsAt, restartDelayMs) {
+  if (nextHandTicker) {
+    clearInterval(nextHandTicker);
+  }
+
+  const target = document.getElementById('result-countdown');
+  const deadline = nextHandStartsAt || (Date.now() + (restartDelayMs || 0));
+  const render = () => {
+    const remaining = Math.max(0, deadline - Date.now());
+    if (!remaining) {
+      target.textContent = '下一局即将开始...';
+      clearInterval(nextHandTicker);
+      nextHandTicker = null;
+      return;
+    }
+    target.textContent = `${Math.ceil(remaining / 1000)} 秒后进入下一局`;
+  };
+
+  render();
+  if (deadline > Date.now()) {
+    nextHandTicker = setInterval(render, 1000);
+  }
 }
 
 function handleActionResult(msg) {
@@ -1930,6 +2035,21 @@ function saveSession(session) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
 
+function getPlayerName() {
+  const input = document.getElementById('name-input');
+  const name = input?.value.trim() || loadPlayerName() || 'Player';
+  savePlayerName(name);
+  return name;
+}
+
+function savePlayerName(name) {
+  localStorage.setItem(PLAYER_NAME_KEY, name);
+}
+
+function loadPlayerName() {
+  return localStorage.getItem(PLAYER_NAME_KEY) || '';
+}
+
 function loadSession() {
   try {
     return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
@@ -2040,7 +2160,15 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('name-input').focus();
+  const nameInput = document.getElementById('name-input');
+  const savedName = loadPlayerName();
+  if (savedName) {
+    nameInput.value = savedName;
+  }
+  nameInput.focus();
+  nameInput.addEventListener('input', (event) => {
+    savePlayerName(event.target.value.trim());
+  });
   document.getElementById('create-room-btn').addEventListener('click', createRoom);
   document.getElementById('join-room-btn').addEventListener('click', joinRoom);
   document.getElementById('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') createRoom(); });

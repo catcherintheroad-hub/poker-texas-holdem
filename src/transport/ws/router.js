@@ -579,6 +579,8 @@ function publishOutcome(room, store, outcome) {
         communityCards: outcome.communityCards.map(cardToString),
         scores: serializeRoomLobby(room).scores,
         sidePots: outcome.sidePots || [],
+        restartDelayMs: room.gameSession.restartDelayMs,
+        nextHandStartsAt: Date.now() + room.gameSession.restartDelayMs,
       });
       broadcastGameState(room, store);
       scheduleNextHand(room, store);
