@@ -269,6 +269,73 @@ test('hand_result payload signals when the table is waiting for rebuys or joiner
   cleanupHarness(harness, created.roomCode);
 });
 
+test('hand_result payload includes showdown hands for revealed players', () => {
+  const harness = createHarness();
+  const owner = harness.connectSocket();
+  const guest = harness.connectSocket();
+
+  owner.sendMessage({ type: 'create_room', playerName: 'Owner', bigBlind: 10, maxPlayers: 4 });
+  const created = owner.findMessage('room_created');
+  guest.sendMessage({ type: 'join_room', roomCode: created.roomCode, playerName: 'Guest' });
+
+  const room = harness.store.rooms.get(created.roomCode);
+  const [a, b] = room.players;
+
+  room.phase = 'river';
+  room.hand = {
+    id: 'result-showdown',
+    phase: 'river',
+    deck: [],
+    board: [
+      { rank: 'K', suit: '♠' },
+      { rank: 'K', suit: '♥' },
+      { rank: '2', suit: '♣' },
+      { rank: '3', suit: '♦' },
+      { rank: '4', suit: '♣' },
+    ],
+    handNumber: 1,
+    seats: {
+      buttonSeatIndex: 0,
+      smallBlindSeatIndex: 0,
+      bigBlindSeatIndex: 1,
+      actingSeatIndex: 0,
+    },
+    betting: {
+      pot: 120,
+      currentBet: 0,
+      minRaise: 10,
+      lastRaiseSize: 10,
+      pendingSeatIndexes: [0],
+      raiseRightsSeatIndexes: [0],
+    },
+    showdown: {
+      seatIndexes: [],
+    },
+    log: {
+      actionLog: [],
+    },
+  };
+  a.holeCards = [{ rank: 'A', suit: '♠' }, { rank: 'A', suit: '♥' }];
+  b.holeCards = [{ rank: 'Q', suit: '♠' }, { rank: 'Q', suit: '♥' }];
+  a.totalCommittedChips = 60;
+  b.totalCommittedChips = 60;
+
+  owner.sent.length = 0;
+  owner.sendMessage({ type: 'action', action: 'check', amount: 0 });
+  const result = owner.findMessage('hand_result');
+
+  assert.ok(result);
+  assert.deepEqual(
+    result.showdownPlayers.map((player) => [player.name, player.hand, player.prize, player.isWinner]),
+    [
+      ['Owner', ['A♠', 'A♥'], 120, true],
+      ['Guest', ['Q♠', 'Q♥'], 0, false],
+    ],
+  );
+
+  cleanupHarness(harness, created.roomCode);
+});
+
 test('session pauses instead of ending the room when too few players remain for the next hand', async () => {
   const harness = createHarness();
   const owner = harness.connectSocket();

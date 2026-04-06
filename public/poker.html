@@ -729,6 +729,64 @@ body {
   gap: 8px;
   justify-content: center;
 }
+.result-showdown {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.result-showdown-title {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.52);
+}
+.result-showdown-grid {
+  display: grid;
+  gap: 10px;
+}
+.result-player-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.result-player-row.winner {
+  border-color: rgba(232, 199, 115, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(232, 199, 115, 0.12);
+}
+.result-player-copy {
+  min-width: 0;
+}
+.result-player-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.result-player-meta {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #9ad8b1;
+}
+.result-player-prize {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--gold);
+}
+.result-player-cards {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.result-player-cards .card,
+.result-player-cards .card-back {
+  width: 32px;
+  height: 46px;
+}
 .result-pot-chip {
   padding: 8px 12px;
   border-radius: 999px;
@@ -1143,6 +1201,12 @@ body {
   .result-board .card-back {
     width: 34px;
     height: 48px;
+  }
+  .result-player-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .result-player-cards {
+    justify-content: flex-start;
   }
 }
 
@@ -1582,13 +1646,17 @@ body {
   <div class="result-card">
     <div class="result-title" id="result-title">赢家！</div>
     <div class="result-subtitle" id="result-subtitle">本局结算中</div>
-    <div class="result-hand" id="result-hand"></div>
-    <div class="result-winners" id="result-winners"></div>
-    <div class="result-board" id="result-board"></div>
-    <div class="result-sidepots" id="result-sidepots"></div>
-    <div class="result-countdown" id="result-countdown"></div>
-    <button id="result-close-btn" class="result-close">收起结果</button>
+  <div class="result-hand" id="result-hand"></div>
+  <div class="result-winners" id="result-winners"></div>
+  <div class="result-board" id="result-board"></div>
+  <div class="result-sidepots" id="result-sidepots"></div>
+  <div class="result-showdown" id="result-showdown" style="display:none">
+    <div class="result-showdown-title">摊牌手牌</div>
+    <div class="result-showdown-grid" id="result-showdown-grid"></div>
   </div>
+  <div class="result-countdown" id="result-countdown"></div>
+  <button id="result-close-btn" class="result-close">收起结果</button>
+</div>
 </div>
 
 <div id="final-summary-overlay" class="result-flash">
@@ -1632,6 +1700,7 @@ let pendingActionState = null;
 let nextHandTicker = null;
 let tableMenuPinnedOpen = false;
 let latestRoomLobby = null;
+let selectedRaiseBy = null;
 
 // ============================================================
 // WEBSOCKET
@@ -2107,19 +2176,27 @@ function renderTable(state) {
   document.getElementById('action-min-raise-display').textContent = minRaiseBy;
   document.getElementById('raise-min-label').textContent = minRaiseBy;
   document.getElementById('raise-max-label').textContent = maxRaiseBy;
+  document.getElementById('min-raise-pill').innerHTML = currentBet > 0
+    ? `最少加到 <strong>${minimumTotalAction}</strong>`
+    : `最小下注 <strong>${minRaise}</strong>`;
   betInput.min = minRaiseBy;
   betInput.max = maxRaiseBy;
-  betInput.placeholder = `至少再加 ${minRaiseBy}`;
+  betInput.placeholder = currentBet > 0
+    ? `至少再加 ${minRaiseBy}（加到 ${minimumTotalAction}）`
+    : `至少下注 ${minRaise}`;
   betInput.disabled = !isMyTurn || !canRaise;
   betSlider.disabled = !isMyTurn || !canRaise;
   betSlider.min = minRaiseBy;
   betSlider.max = maxRaiseBy;
 
   if (canRaise && maxRaiseBy >= minRaiseBy) {
-    const nextRaise = clampRaiseValue(betInput.value, minRaiseBy, maxRaiseBy);
+    const desiredRaise = selectedRaiseBy ?? betInput.value;
+    const nextRaise = clampRaiseValue(desiredRaise, minRaiseBy, maxRaiseBy);
+    selectedRaiseBy = nextRaise;
     betInput.value = nextRaise;
     betSlider.value = nextRaise;
   } else {
+    selectedRaiseBy = null;
     betInput.value = '';
     betSlider.value = 0;
   }
@@ -2160,7 +2237,9 @@ function phaseName(phase) {
 // ============================================================
 function doAction(action) {
   const betInput = document.getElementById('bet-input');
-  const rawAmount = parseInt(betInput.value, 10) || 0;
+  const { minRaiseBy, maxRaiseBy } = getRaiseBoundsFromState();
+  const rawRaise = clampRaiseValue(selectedRaiseBy ?? betInput.value, minRaiseBy, maxRaiseBy);
+  const rawAmount = action === 'raise' ? rawRaise : (parseInt(betInput.value, 10) || 0);
   const myPlayer = gameState?.players?.find((player) => player.id === myPlayerId);
   const baseCommitted = myPlayer?.currentBet || 0;
   const amount = action === 'raise' ? baseCommitted + rawAmount : rawAmount;
@@ -2191,6 +2270,9 @@ function doAction(action) {
   };
   setActionButtonsDisabled(true);
   showNotif(action === 'allin' ? '已发送 All-in' : `已发送${actionLabel(action)}`);
+  if (action === 'raise') {
+    selectedRaiseBy = rawRaise;
+  }
   betInput.value = '';
 }
 
@@ -2268,6 +2350,7 @@ function renderHistoryOverlay() {
 function showResultFlash(msg) {
   const el = document.getElementById('result-flash');
   const winners = msg.winners || [];
+  const showdownPlayers = msg.showdownPlayers || winners;
   const winnerNames = winners.map((winner) => winner.name).join(' / ');
   document.getElementById('result-title').textContent = winners.length > 1 ? '本局平分' : '本局赢家';
   document.getElementById('result-subtitle').textContent = winnerNames ? `${winnerNames} 获胜` : '结算完成';
@@ -2284,6 +2367,28 @@ function showResultFlash(msg) {
     : `<div class="result-pot-chip">总底池 ${msg.pot || 0}</div>`;
   if (msg.waitingForPlayers) {
     sidePots.insertAdjacentHTML('beforeend', '<div class="result-pot-chip">等待补码或新玩家加入后继续</div>');
+  }
+  const showdownSection = document.getElementById('result-showdown');
+  const showdownGrid = document.getElementById('result-showdown-grid');
+  if (showdownPlayers.length) {
+    showdownSection.style.display = 'grid';
+    showdownGrid.innerHTML = showdownPlayers
+      .map((player) => `
+        <div class="result-player-row ${player.isWinner ? 'winner' : ''}">
+          <div class="result-player-copy">
+            <div class="result-player-name">${escapeHtml(player.name || '玩家')}${player.isWinner ? ' · 赢' : ''}</div>
+            <div class="result-player-meta">${escapeHtml(player.handType || '摊牌')}</div>
+            <div class="result-player-prize">${player.prize > 0 ? `赢得 ${player.prize}` : '未分得底池'}</div>
+          </div>
+          <div class="result-player-cards">
+            ${(player.hand || []).map((card) => makeCard(card).outerHTML).join('')}
+          </div>
+        </div>
+      `)
+      .join('');
+  } else {
+    showdownSection.style.display = 'none';
+    showdownGrid.innerHTML = '';
   }
   startNextHandCountdown(msg.nextHandStartsAt, msg.restartDelayMs);
   el.classList.add('active');
@@ -2356,6 +2461,15 @@ function formatEngineEvent(event) {
 function formatTimestamp(value) {
   if (!value) return '';
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function closeResultFlash() {
@@ -2528,11 +2642,32 @@ function setActionButtonsDisabled(disabled) {
 }
 
 function clampRaiseValue(value, min, max) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= 0) {
+    return 0;
+  }
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) {
     return min;
   }
   return Math.max(min, Math.min(max, parsed));
+}
+
+function getRaiseBoundsFromState() {
+  const myPlayer = gameState?.players?.find((player) => player.id === myPlayerId);
+  const currentBet = gameState?.currentBet || 0;
+  const minRaise = gameState?.minRaise || gameState?.bigBlind || 0;
+  const lastRaiseSize = gameState?.hand?.betting?.lastRaiseSize ?? gameState?.bigBlind ?? 0;
+  const currentCommitted = myPlayer?.currentBet || 0;
+  const toCall = Math.max(0, currentBet - currentCommitted);
+  const maxRaiseBy = Math.max(0, (myPlayer?.chips || 0) - toCall);
+  const minimumTotalAction = currentBet > 0
+    ? Math.max(minRaise, currentBet + lastRaiseSize)
+    : minRaise;
+
+  return {
+    minRaiseBy: Math.max(0, minimumTotalAction - currentCommitted),
+    maxRaiseBy,
+  };
 }
 
 function syncRaiseControlsFromInput() {
@@ -2541,9 +2676,13 @@ function syncRaiseControlsFromInput() {
   if (!betInput || !betSlider || betInput.disabled) {
     return;
   }
-  const nextValue = clampRaiseValue(betInput.value, Number(betSlider.min), Number(betSlider.max));
-  betInput.value = nextValue;
-  betSlider.value = nextValue;
+  const rawValue = Number.parseInt(betInput.value, 10);
+  if (Number.isNaN(rawValue)) {
+    selectedRaiseBy = null;
+    return;
+  }
+  selectedRaiseBy = rawValue;
+  betSlider.value = clampRaiseValue(rawValue, Number(betSlider.min), Number(betSlider.max));
 }
 
 function syncRaiseControlsFromSlider() {
@@ -2552,7 +2691,20 @@ function syncRaiseControlsFromSlider() {
   if (!betInput || !betSlider || betSlider.disabled) {
     return;
   }
-  betInput.value = betSlider.value;
+  selectedRaiseBy = Number.parseInt(betSlider.value, 10) || Number(betSlider.min) || 0;
+  betInput.value = selectedRaiseBy;
+}
+
+function finalizeRaiseInput() {
+  const betInput = document.getElementById('bet-input');
+  const betSlider = document.getElementById('bet-slider');
+  if (!betInput || !betSlider || betInput.disabled) {
+    return;
+  }
+  const nextValue = clampRaiseValue(selectedRaiseBy ?? betInput.value, Number(betSlider.min), Number(betSlider.max));
+  selectedRaiseBy = nextValue;
+  betInput.value = nextValue;
+  betSlider.value = nextValue;
 }
 
 function updateActionBarHeight() {
@@ -2968,6 +3120,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-raise').addEventListener('click', () => doAction('raise'));
   document.getElementById('btn-allin').addEventListener('click', () => doAction('allin'));
   document.getElementById('bet-input').addEventListener('input', syncRaiseControlsFromInput);
+  document.getElementById('bet-input').addEventListener('change', finalizeRaiseInput);
+  document.getElementById('bet-input').addEventListener('blur', finalizeRaiseInput);
   document.getElementById('bet-slider').addEventListener('input', syncRaiseControlsFromSlider);
   document.getElementById('history-link').addEventListener('click', showHistoryOverlay);
   document.getElementById('score-link').addEventListener('click', showScoreboard);

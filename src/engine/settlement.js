@@ -24,6 +24,7 @@ function resolveUncontestedWin(room, winner) {
     type: 'hand_result',
     handMeta,
     winners: [winnerSnapshot],
+    showdownPlayers: [winnerSnapshot],
     prize,
     pot: room.hand.betting.pot,
     handType: 'Uncontested',
@@ -71,10 +72,19 @@ function resolveShowdown(room) {
       prize: payoutByPlayerId.get(player.id),
     }));
 
+  const showdownPlayers = contenders.map((player) => ({
+    id: player.id,
+    name: player.name,
+    hand: [...player.holeCards],
+    handType: evaluations.get(player.id).name,
+    prize: payoutByPlayerId.get(player.id) || 0,
+  }));
+
   const outcome = {
     type: 'hand_result',
     handMeta,
     winners: payoutWinners,
+    showdownPlayers,
     prize: room.hand.betting.pot,
     pot: room.hand.betting.pot,
     handType: payoutWinners[0] ? payoutWinners[0].handType : 'Showdown',

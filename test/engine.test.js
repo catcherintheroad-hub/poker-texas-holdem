@@ -191,6 +191,10 @@ test('river showdown resolves side pots across multiple winners', () => {
     result.outcome.winners.map((winner) => [winner.name, winner.prize]),
     [['A', 300], ['B', 200], ['C', 100]],
   );
+  assert.deepEqual(
+    result.outcome.showdownPlayers.map((player) => [player.name, player.handType, player.prize]),
+    [['A', 'Two Pair', 300], ['B', 'Two Pair', 200], ['C', 'Two Pair', 100]],
+  );
 });
 
 test('folded players leave dead chips in the pot but cannot win at showdown', () => {
